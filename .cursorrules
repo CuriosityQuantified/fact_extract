@@ -1,0 +1,41 @@
+# Instructions
+[Standard instructions content as provided]
+
+# Tools
+[Standard tools content as provided]
+
+# Lessons
+[Standard lessons content as provided]
+
+# Scratchpad
+
+## Current Task: Setup AI Fact Extraction Project
+Setting up a new project for extracting and storing facts from text and documents using LangChain and LangGraph.
+
+### Project Structure Plan
+- Create virtual environment with Python 3.10
+- Setup basic project structure:
+  - src/
+    - fact_extract/
+      - extractors/  (different fact extraction implementations)
+      - storage/     (storage implementations)
+      - schemas/     (data models and schemas)
+      - pipelines/   (LangGraph pipelines)
+      - utils/       (helper functions)
+  - tests/
+  - docs/
+  - examples/
+  - requirements/
+    - requirements.txt       (main requirements)
+    - requirements-dev.txt   (development requirements)
+  - README.md
+  - .env.example
+  - .gitignore
+
+### Progress
+[ ] Create virtual environment
+[ ] Setup basic folder structure
+[ ] Create initial requirements files
+[ ] Setup basic documentation
+[ ] Initialize git repository
+[ ] Create example configuration 
