@@ -31,14 +31,15 @@ env/
 *.swp
 *.swo
 
-# Environment
+# Environment variables
 .env
-.env.*
-!.env.example
 
 # Logs
-logs/
 *.log
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Test coverage
 .coverage
@@ -55,7 +56,4 @@ site/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb
-
-# macOS
-.DS_Store 
+*.ipynb 

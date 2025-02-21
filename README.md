@@ -1,78 +1,43 @@
 # Fact Extract
 
-A Python-based fact extraction system using LangChain and LangGraph for extracting and storing facts from text and documents.
+A simple Python-based fact extraction system that processes text documents and extracts relevant facts using LLMs.
 
-## Features
+## Overview
 
-- Extract facts from various document types (text, PDF, etc.)
-- Flexible storage options for extracted facts
-- Configurable extraction pipelines using LangGraph
-- Easy integration with various LLM providers
-- Structured fact schema management
+The system takes text input, processes it in manageable chunks, and uses LLMs to extract relevant facts. Each extracted fact is validated and stored with its source information.
 
-## Installation
+## Core Features
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/fact_extract.git
-cd fact_extract
-```
-
-2. Create and activate a virtual environment:
-```bash
-python3.10 -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements/requirements.txt
-pip install -r requirements/requirements-dev.txt  # For development
-```
-
-4. Copy the example environment file and configure it:
-```bash
-cp .env.example .env
-```
+- Text document processing
+- LLM-based fact extraction
+- Fact validation
+- Source tracking
+- Structured output (CSV/Excel)
 
 ## Project Structure
 
 ```
 fact_extract/
-├── src/
-│   └── fact_extract/
-│       ├── extractors/    # Fact extraction implementations
-│       ├── storage/       # Storage implementations
-│       ├── schemas/       # Data models and schemas
-│       ├── pipelines/     # LangGraph pipelines
-│       └── utils/         # Helper functions
-├── tests/                 # Test suite
-├── docs/                  # Documentation
-├── examples/              # Usage examples
-└── requirements/          # Dependency files
+├── venv/           # Python virtual environment
+├── src/            # Source code
+├── .env            # Environment variables
+└── README.md       # Project documentation
 ```
+
+## Setup
+
+1. Activate the virtual environment:
+```bash
+source venv/bin/activate
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Configure environment variables in `.env`
 
 ## Usage
 
-[Documentation to be added]
-
-## Development
-
-1. Install development dependencies:
-```bash
-pip install -r requirements/requirements-dev.txt
-```
-
-2. Install pre-commit hooks:
-```bash
-pre-commit install
-```
-
-3. Run tests:
-```bash
-pytest
-```
-
-## License
-
-[License to be added] 
+[To be added as the project develops]

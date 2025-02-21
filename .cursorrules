@@ -9,33 +9,57 @@
 
 # Scratchpad
 
-## Current Task: Setup AI Fact Extraction Project
-Setting up a new project for extracting and storing facts from text and documents using LangChain and LangGraph.
+## Current Task: Implementing Core LangGraph Workflow
+Creating a simple but well-structured fact extraction system using LangGraph.
 
-### Project Structure Plan
-- Create virtual environment with Python 3.10
-- Setup basic project structure:
-  - src/
-    - fact_extract/
-      - extractors/  (different fact extraction implementations)
-      - storage/     (storage implementations)
-      - schemas/     (data models and schemas)
-      - pipelines/   (LangGraph pipelines)
-      - utils/       (helper functions)
-  - tests/
-  - docs/
-  - examples/
-  - requirements/
-    - requirements.txt       (main requirements)
-    - requirements-dev.txt   (development requirements)
-  - README.md
-  - .env.example
-  - .gitignore
+### Implementation Progress
+[X] Set up basic project structure
+[X] Create requirements.txt
+[X] Implement state models (TextChunk, Fact, WorkflowState)
+[X] Create LangGraph nodes (chunker, extractor)
+[X] Implement workflow graph
+[X] Add configuration utilities
+[X] Create main entry point
+[X] Improve text chunking with RecursiveCharacterTextSplitter
+[ ] Test the implementation
+[ ] Add error handling improvements
+[ ] Add documentation
 
-### Progress
-[ ] Create virtual environment
-[ ] Setup basic folder structure
-[ ] Create initial requirements files
-[ ] Setup basic documentation
-[ ] Initialize git repository
-[ ] Create example configuration 
+### Current Implementation Features
+1. Advanced recursive text chunking:
+   - Splits on paragraphs, newlines, sentences, and words
+   - Configurable chunk size and overlap
+   - Preserves context between chunks
+   - Detailed chunk metadata
+2. GPT-4-mini based fact extraction
+3. Confidence scoring for each fact
+4. Source tracking (which chunk produced each fact)
+5. Basic error handling
+6. Command-line interface
+
+### Next Steps
+1. Test the implementation with sample text
+2. Add better error handling and logging
+3. Fine-tune chunking parameters if needed
+4. Add fact validation
+5. Add structured output formats (CSV/Excel)
+
+### Code Structure
+```
+src/fact_extract/
+├── __init__.py         # Package exports
+├── __main__.py         # CLI entry point
+├── models/
+│   └── state.py        # Data models
+├── graph/
+│   └── nodes.py        # LangGraph nodes
+└── utils/
+    └── config.py       # Configuration
+```
+
+### Notes
+- Improved chunking using LangChain's RecursiveCharacterTextSplitter
+- Added detailed metadata for chunks and facts
+- Maintained simple but extensible architecture
+- Added graceful error handling in chunker
+- Focused on maintainability and readability 
