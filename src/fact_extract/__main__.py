@@ -3,68 +3,189 @@ Main entry point for the fact extraction system.
 """
 
 import sys
+import asyncio
+import logging
 from typing import List, Dict
+from datetime import datetime
+from pathlib import Path
 
-from .utils.config import load_config
-from .graph.nodes import create_workflow
-from .models.state import WorkflowState, Fact
+from fact_extract.utils.config import load_config
+from fact_extract.graph.nodes import create_workflow
+from fact_extract.models.state import create_initial_state
+from fact_extract.storage.chunk_repository import ChunkRepository
+from fact_extract.storage.fact_repository import FactRepository
+from fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_2
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def extract_facts(text: str) -> List[Dict]:
-    """Extract facts from the given text.
+def format_fact_output(fact: Dict) -> str:
+    """Format a fact for console output.
+    
+    Args:
+        fact: Dictionary containing fact data
+        
+    Returns:
+        Formatted string for display
+    """
+    # Get verification status and reason
+    status = fact.get("verification_status", "unknown")
+    reason = fact.get("verification_reason", "")
+    
+    # Format the output
+    lines = [
+        f"• Statement: {fact['statement']}",
+        f"  Confidence: {fact['confidence']:.2f}",
+        f"  Source Chunk: {fact['source_chunk']}",
+        f"  Status: {status.upper()}",
+    ]
+    
+    if reason:
+        lines.append(f"  Reason: {reason}")
+        
+    return "\n".join(lines)
+
+async def extract_facts(
+    text: str,
+    document_name: str = "Unknown",
+    source_url: str = "",
+    output_dir: str = "output"
+) -> List[Dict]:
+    """Extract facts from the given text using LangGraph workflow.
     
     Args:
         text: The input text to extract facts from
+        document_name: Name/title of the source document
+        source_url: URL or identifier of the source
+        output_dir: Directory for output files
         
     Returns:
         List of extracted facts as dictionaries
     """
-    # Load configuration
-    config = load_config()
-    
-    # Create workflow
-    workflow, input_key = create_workflow()
-    
-    # Run workflow
-    result = workflow.invoke({input_key: text})
-    
-    # Convert to simple dict format for output
-    facts = []
-    for fact in result.extracted_facts:
-        facts.append({
-            "statement": fact.statement,
-            "confidence": fact.confidence,
-            "chunk_index": fact.source_chunk,
-            "metadata": fact.metadata
-        })
-    
-    return facts
-
-
-def main():
-    """Main entry point."""
-    # Simple command line interface
-    if len(sys.argv) != 2:
-        print("Usage: python -m fact_extract 'text to analyze'")
-        sys.exit(1)
-    
-    text = sys.argv[1]
     try:
-        facts = extract_facts(text)
+        # Load configuration
+        config = load_config()
         
-        # Print results
-        print("\nExtracted Facts:")
-        print("-" * 40)
+        # Initialize repositories
+        chunk_repo = ChunkRepository()
+        fact_repo = FactRepository()
+        
+        # Create workflow
+        app, input_key = create_workflow(chunk_repo, fact_repo)
+        
+        # Create initial state
+        initial_state = create_initial_state(
+            input_text=text,
+            document_name=document_name,
+            source_url=source_url
+        )
+        
+        # Run workflow using invoke
+        final_state = await app.ainvoke(initial_state)
+            
+        # Return extracted facts from final state
+        return final_state["extracted_facts"] if final_state else []
+        
+    except Exception as e:
+        logger.error(f"Fact extraction failed: {str(e)}")
+        return []
+
+async def main():
+    """Main entry point."""
+    print("Extracting facts from synthetic article about sustainable data centers...")
+    print("-" * 80)
+    
+    try:
+        # Extract facts
+        facts = await extract_facts(
+            text=SYNTHETIC_ARTICLE_2,
+            document_name="Sustainable Data Centers Article",
+            source_url="synthetic_data.py"
+        )
+        
+        if not facts:
+            # Get chunk processing stats from repositories
+            chunk_repo = ChunkRepository()
+            processed_chunks = chunk_repo.get_chunks(
+                document_name="Sustainable Data Centers Article",
+                status="success"
+            )
+            
+            print("\nNo new facts were extracted.")
+            print(f"Previously processed chunks: {len(processed_chunks)}")
+            
+            # Print chunk details for debugging
+            if processed_chunks:
+                print("\nProcessed chunk details:")
+                for chunk in processed_chunks:
+                    print(f"- Chunk {chunk['chunk_index']}: " + 
+                          f"Contains facts: {chunk['contains_facts']}, " +
+                          f"Processed at: {chunk['timestamp']}")
+            return
+        
+        # Group facts by verification status
+        approved = []
+        rejected = []
+        pending = []
+        
         for fact in facts:
-            print(f"Statement: {fact['statement']}")
-            print(f"Confidence: {fact['confidence']:.2f}")
-            print(f"From chunk: {fact['chunk_index']}")
-            print("-" * 40)
+            status = fact.get("verification_status", "pending")
+            if status == "approved":
+                approved.append(fact)
+            elif status == "rejected":
+                rejected.append(fact)
+            else:
+                pending.append(fact)
+        
+        # Print results by category
+        if approved:
+            print("\nApproved Facts:")
+            print("-" * 80)
+            for fact in approved:
+                print(format_fact_output(fact))
+                print()
+        
+        if rejected:
+            print("\nRejected Facts:")
+            print("-" * 80)
+            for fact in rejected:
+                print(format_fact_output(fact))
+                print()
+        
+        if pending:
+            print("\nPending Facts:")
+            print("-" * 80)
+            for fact in pending:
+                print(format_fact_output(fact))
+                print()
+        
+        # Print statistics
+        print("\nStatistics:")
+        print("-" * 80)
+        print(f"Total facts processed: {len(facts)}")
+        print(f"Approved facts: {len(approved)}")
+        print(f"Rejected facts: {len(rejected)}")
+        print(f"Pending facts: {len(pending)}")
+        
+        if facts:
+            avg_conf = sum(f["confidence"] for f in facts) / len(facts)
+            print(f"Average confidence: {avg_conf:.2f}")
+            
+        # Get repository stats
+        repo = FactRepository()
+        stored_facts = repo.get_facts(
+            document_name="Sustainable Data Centers Article",
+            verification_status="approved"
+        )
+        print(f"Facts stored in repository: {len(stored_facts)}")
             
     except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
+        logger.error(f"Error: {str(e)}")
         sys.exit(1)
 
-
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

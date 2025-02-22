@@ -1,0 +1,21 @@
+[Cursor] Initial implementation of fact extraction system
+
+Core features:
+- Text chunking with RecursiveCharacterTextSplitter
+- Fact extraction using LLM (Groq)
+- Fact verification with verbatim matching
+- Excel-based storage for chunks and facts
+- Improved chunk tracking and deduplication
+- Detailed logging and error handling
+
+Components:
+- State models for workflow, chunks, and facts
+- LangGraph nodes (chunker, extractor, validator)
+- Storage repositories for chunks and facts
+- Configuration and utility modules
+- Basic test framework
+
+Next steps:
+- Implement feedback loop for non-verbatim facts
+- Add more comprehensive testing
+- Improve documentation 

@@ -2,78 +2,72 @@
 Test script for fact extraction using synthetic data.
 """
 
-from src.fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE
-from src.fact_extract import extract_facts
+from typing import Dict, List
+import sys
 
+from src.fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_2
+from src.fact_extract.__main__ import extract_facts
 
-def main():
-    """Run fact extraction on synthetic article."""
-    print("Testing fact extraction on synthetic article about data centers...")
+def print_facts_by_confidence(facts: List[Dict]):
+    """Print facts grouped by confidence level with statistics."""
+    print("\nExtracted Facts:")
     print("-" * 80)
     
-    try:
-        # Extract facts
-        facts = extract_facts(SYNTHETIC_ARTICLE)
-        
-        # Print results with formatting
-        print(f"\nExtracted {len(facts)} facts:")
-        print("-" * 80)
-        
-        # Group facts by confidence level
-        high_conf = []
-        medium_conf = []
-        low_conf = []
-        
-        for fact in facts:
-            if fact['confidence'] >= 0.8:
-                high_conf.append(fact)
-            elif fact['confidence'] >= 0.5:
-                medium_conf.append(fact)
-            else:
-                low_conf.append(fact)
-        
-        # Print high confidence facts
+    # Group facts by confidence level
+    high_conf = [f for f in facts if f["confidence"] >= 0.8]
+    med_conf = [f for f in facts if 0.5 <= f["confidence"] < 0.8]
+    low_conf = [f for f in facts if f["confidence"] < 0.5]
+    
+    # Print high confidence facts
+    if high_conf:
         print("\nHigh Confidence Facts (≥0.8):")
         print("-" * 80)
         for fact in high_conf:
             print(f"• {fact['statement']}")
             print(f"  Confidence: {fact['confidence']:.2f}")
-            print(f"  From chunk: {fact['chunk_index']}")
-            print()
-        
-        # Print medium confidence facts
-        if medium_conf:
-            print("\nMedium Confidence Facts (0.5-0.8):")
-            print("-" * 80)
-            for fact in medium_conf:
-                print(f"• {fact['statement']}")
-                print(f"  Confidence: {fact['confidence']:.2f}")
-                print(f"  From chunk: {fact['chunk_index']}")
-                print()
-        
-        # Print low confidence facts
-        if low_conf:
-            print("\nLow Confidence Facts (<0.5):")
-            print("-" * 80)
-            for fact in low_conf:
-                print(f"• {fact['statement']}")
-                print(f"  Confidence: {fact['confidence']:.2f}")
-                print(f"  From chunk: {fact['chunk_index']}")
-                print()
-        
-        # Print statistics
-        print("\nStatistics:")
+            print(f"  From chunk: {fact['chunk_index']}\n")
+    
+    # Print medium confidence facts        
+    if med_conf:
+        print("\nMedium Confidence Facts (0.5-0.8):")
         print("-" * 80)
-        print(f"Total facts extracted: {len(facts)}")
-        print(f"High confidence facts: {len(high_conf)}")
-        print(f"Medium confidence facts: {len(medium_conf)}")
-        print(f"Low confidence facts: {len(low_conf)}")
-        print(f"Average confidence: {sum(f['confidence'] for f in facts) / len(facts):.2f}")
+        for fact in med_conf:
+            print(f"• {fact['statement']}")
+            print(f"  Confidence: {fact['confidence']:.2f}")
+            print(f"  From chunk: {fact['chunk_index']}\n")
+            
+    # Print low confidence facts
+    if low_conf:
+        print("\nLow Confidence Facts (<0.5):")
+        print("-" * 80)
+        for fact in low_conf:
+            print(f"• {fact['statement']}")
+            print(f"  Confidence: {fact['confidence']:.2f}")
+            print(f"  From chunk: {fact['chunk_index']}\n")
+            
+    # Print statistics
+    print("\nStatistics:")
+    print("-" * 80)
+    print(f"Total facts extracted: {len(facts)}")
+    print(f"High confidence facts: {len(high_conf)}")
+    print(f"Medium confidence facts: {len(med_conf)}")
+    print(f"Low confidence facts: {len(low_conf)}")
+    if facts:
+        avg_conf = sum(f["confidence"] for f in facts) / len(facts)
+        print(f"Average confidence: {avg_conf:.2f}")
+
+def main():
+    """Main test function."""
+    print("Testing fact extraction on sustainable data centers article...")
+    print("-" * 80)
+    
+    try:
+        facts = extract_facts(SYNTHETIC_ARTICLE_2)
+        print_facts_by_confidence(facts)
         
     except Exception as e:
-        print(f"Error during testing: {str(e)}")
-        raise
-
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

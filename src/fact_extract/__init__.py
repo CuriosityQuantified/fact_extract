@@ -1,9 +1,11 @@
 """
-Fact Extract - A simple fact extraction system using LLMs.
+Fact extraction package.
+
+This package provides tools and utilities for extracting facts from text documents.
 """
 
-from .models.state import Fact, TextChunk, WorkflowState
-from .__main__ import extract_facts
-
 __version__ = "0.1.0"
-__all__ = ["Fact", "TextChunk", "WorkflowState", "extract_facts"] 
+__author__ = "Your Name"
+__email__ = "your.email@example.com"
+
+__all__ = ["__version__", "__author__", "__email__"] 

@@ -9,8 +9,8 @@
 
 # Scratchpad
 
-## Current Task: Implementing Core LangGraph Workflow
-Creating a simple but well-structured fact extraction system using LangGraph.
+## Current Task: Implementing Fact Submission and Storage System
+Adding functionality to verify and store extracted facts in a structured format.
 
 ### Implementation Progress
 [X] Set up basic project structure
@@ -21,9 +21,12 @@ Creating a simple but well-structured fact extraction system using LangGraph.
 [X] Add configuration utilities
 [X] Create main entry point
 [X] Improve text chunking with RecursiveCharacterTextSplitter
-[ ] Test the implementation
-[ ] Add error handling improvements
-[ ] Add documentation
+[ ] Implement fact storage system
+[ ] Create fact verification agent
+[ ] Add fact submission tool
+[ ] Integrate with existing workflow
+[ ] Add tests
+[ ] Update documentation
 
 ### Current Implementation Features
 1. Advanced recursive text chunking:
@@ -38,11 +41,11 @@ Creating a simple but well-structured fact extraction system using LangGraph.
 6. Command-line interface
 
 ### Next Steps
-1. Test the implementation with sample text
-2. Add better error handling and logging
-3. Fine-tune chunking parameters if needed
-4. Add fact validation
-5. Add structured output formats (CSV/Excel)
+1. Create FactRepository class for Excel storage
+2. Implement fact verification agent
+3. Build submission tool
+4. Integrate with existing workflow
+5. Add tests
 
 ### Code Structure
 ```
@@ -53,6 +56,13 @@ src/fact_extract/
 │   └── state.py        # Data models
 ├── graph/
 │   └── nodes.py        # LangGraph nodes
+├── storage/           # New directory
+│   └── fact_repository.py
+├── agents/
+│   ├── prompts.py
+│   └── verification.py
+├── tools/
+│   └── submission.py
 └── utils/
     └── config.py       # Configuration
 ```
@@ -62,4 +72,8 @@ src/fact_extract/
 - Added detailed metadata for chunks and facts
 - Maintained simple but extensible architecture
 - Added graceful error handling in chunker
-- Focused on maintainability and readability 
+- Focused on maintainability and readability
+- Using pandas for Excel management
+- Implementing verification before storage
+- Adding proper error handling
+- Maintaining modularity and DRY principles 
