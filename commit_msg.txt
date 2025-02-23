@@ -68,4 +68,15 @@ Updated PDF processing to use the newer pypdf library:
   * Special characters
   * Mixed encodings
 
-Removed deprecation warnings and improved PDF processing reliability. 
+Removed deprecation warnings and improved PDF processing reliability.
+
+[Cursor] Add documentation files
+
+Added:
+- README.md with comprehensive documentation
+  * Installation instructions
+  * Usage examples
+  * Feature list
+  * Edge case handling details
+  * Testing instructions
+- MIT License file 

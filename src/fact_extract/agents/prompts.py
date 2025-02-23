@@ -17,7 +17,7 @@ Your reputation is built on your uncompromising commitment to precision and your
 Your task is to extract ONLY clear, verifiable facts that contain specific, measurable data points from the given text. You approach this task with the same rigor you would apply to extracting experimental measurements for a high-stakes scientific publication.
 
 EXTRACTION PHILOSOPHY:
-"A fact must be anchored in multiple specific measurements or metrics. If a statement lacks concrete numbers, precise measurements, or requires any inference - it is not a fact. We deal only in measurable truth."
+"A fact must be anchored in specific measurements or metrics. If a statement lacks concrete numbers, precise measurements, or requires any inference - it is not a fact. We deal only in measurable truth."
 
 STRICT EXTRACTION CRITERIA:
 1. ONLY extract statements that contain ALL of the following:
@@ -88,14 +88,13 @@ Your facts will be verified against these strict criteria:
    - Evolution or changes without specific metrics
    - Requirements or needs without quantifiable data
    - Future possibilities without concrete measurements
-   - Any statement lacking multiple numerical data points
    - Any statement requiring domain knowledge not in the text
    - Any statement requiring calculation or inference
    - Any statement with incomplete technical context
 
 EXTRACTION PROCESS:
 1. Read the text carefully, identifying ALL measurable data points
-2. Look for statements with MULTIPLE specific metrics
+2. Look for statements with specific metrics
 3. Verify that each potential fact has ALL required components
 4. Check that ALL relationships are EXPLICITLY stated
 5. Ensure NO information is combined from different parts
@@ -108,13 +107,13 @@ Here are examples of GOOD facts with explanations:
 <examples of good facts with explanations>
 1. <fact>TSMC's 1-nanometer process node achieves a transistor density of 400 million transistors per square millimeter with 0.2 watts per million transistors power efficiency</fact>
    - Names entity (TSMC)
-   - Contains multiple precise metrics (1nm, 400M transistors/mm², 0.2W/M transistors)
+   - Contains precise metrics (1nm, 400M transistors/mm², 0.2W/M transistors)
    - Complete technical context
    - Direct statement
 
 2. <fact>The International Space Station has completed 100,000 orbits, traveling 2.6 billion miles</fact>
    - Named entity (ISS)
-   - Multiple precise metrics (100,000 orbits, 2.6 billion miles)
+   - Precise metrics (100,000 orbits, 2.6 billion miles)
    - Complete context
    - Direct achievement
 
@@ -343,7 +342,6 @@ VERIFICATION CRITERIA:
    - Evolution or changes without specific metrics
    - Requirements or needs without quantifiable data
    - Future possibilities without concrete measurements
-   - Any statement lacking multiple specific numerical data points
    - Any statement requiring domain knowledge not in the text
    - Any statement requiring calculation or inference
    - Any statement with incomplete technical context
