@@ -1,32 +1,22 @@
-[Cursor] Enhanced fact extraction and verification prompts
+[Cursor] Initial commit: Document processing system
 
-Enhanced the fact extraction system to be more strict about requiring measurable data points while maintaining reasonable acceptance criteria:
+Added document processing system with support for:
+- Excel (.xlsx, .xls) files
+- CSV files with auto-dialect detection
+- Word (.docx, .doc) documents
+- PDF files with metadata extraction
 
-1. Added strong personas for both agents:
-   - Dr. Victoria Blackwood for verification (The Fact Assassin)
-   - Dr. Marcus Chen for extraction (The Data Purist)
+Features:
+- Parallel document processing
+- Robust error handling
+- Multiple character encoding support
+- Memory-efficient processing
+- Comprehensive test suite
+- Example usage script
 
-2. Strengthened fact criteria:
-   - Require at least ONE specific metric with proper context
-   - Require FULL proper names for entities
-   - Require units for ALL numerical values
-   - Require test conditions/context for ALL measurements
-   - Added emphasis on technical context completeness
-
-3. Added verification/extraction processes:
-   - Step-by-step procedures for evaluating facts
-   - More rigorous checks for completeness
-   - Stronger emphasis on direct verification
-
-4. Enhanced few-shot examples:
-   - Updated examples to demonstrate proper metric requirements
-   - Added more detailed reasoning for rejections
-   - Emphasized proper handling of related measurements
-
-5. Added test files:
-   - test_cybersecurity.py for SYNTHETIC_ARTICLE_5
-   - test_semiconductor.py for SYNTHETIC_ARTICLE_6
-
-Tested and verified:
-- SYNTHETIC_ARTICLE_5: Correctly rejects all statements (no measurable data)
-- SYNTHETIC_ARTICLE_6: Correctly extracts and verifies facts with proper metrics and context 
+Components:
+- DocumentProcessor base class with specialized processors
+- DocumentLoader for parallel processing
+- Factory pattern for processor selection
+- Test suite with synthetic test files
+- Example script demonstrating usage 

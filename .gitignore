@@ -31,6 +31,12 @@ env/
 *.swp
 *.swo
 
+# Test files
+test_data/
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Environment variables
 .env
 
@@ -40,16 +46,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
-
-# Test coverage
-.coverage
-coverage.xml
-htmlcov/
-
-# Data
-data/
-*.db
-*.sqlite3
 
 # Documentation
 site/
