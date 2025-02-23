@@ -19,4 +19,53 @@ Components:
 - DocumentLoader for parallel processing
 - Factory pattern for processor selection
 - Test suite with synthetic test files
-- Example script demonstrating usage 
+- Example script demonstrating usage
+
+[Cursor] Add comprehensive edge case tests
+
+Added extensive edge case testing for document processors:
+
+1. Empty Files:
+   - Empty Excel, CSV, Word, and PDF files
+   - Minimal valid file structures
+
+2. Malformed Files:
+   - Invalid file formats
+   - Corrupted content
+   - Mixed delimiters in CSV
+
+3. Large Files:
+   - Excel/CSV with 10,000 rows
+   - Word with 1,000 paragraphs
+   - PDF with 100 pages
+   - Memory efficiency testing
+
+4. Special Characters:
+   - Unicode characters (CJK)
+   - Accented characters
+   - Emojis and symbols
+   - Cross-format compatibility
+
+5. Mixed Encodings:
+   - UTF-8 content
+   - Latin1 content
+   - ASCII fallback
+   - Encoding detection
+
+Tests verify robust error handling and graceful degradation across all supported formats.
+
+[Cursor] Migrate from PyPDF2 to pypdf
+
+Updated PDF processing to use the newer pypdf library:
+- Replaced PyPDF2 with pypdf>=4.0.0
+- Updated imports and API usage in PDFProcessor
+- Added additional text existence checks
+- Updated metadata key handling
+- Verified all edge cases still pass:
+  * Empty files
+  * Malformed files
+  * Large files (100 pages)
+  * Special characters
+  * Mixed encodings
+
+Removed deprecation warnings and improved PDF processing reliability. 

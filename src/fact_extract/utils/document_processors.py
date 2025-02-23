@@ -10,7 +10,7 @@ import logging
 import pandas as pd
 from openpyxl import load_workbook
 from docx import Document
-import PyPDF2
+from pypdf import PdfReader
 import re
 import csv
 
@@ -176,21 +176,21 @@ class PDFProcessor(DocumentProcessor):
         """Extract content from PDF file."""
         try:
             with open(file_path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
+                reader = PdfReader(file)
                 
                 # Try to get title from metadata
                 title = "Untitled"
                 if reader.metadata:
                     if '/Title' in reader.metadata:
                         title = reader.metadata['/Title']
-                    elif 'Title' in reader.metadata:
-                        title = reader.metadata['Title']
+                    elif 'title' in reader.metadata:
+                        title = reader.metadata['title']
                 
                 # Extract text from all pages
                 content = []
                 for page in reader.pages:
                     text = page.extract_text()
-                    if text.strip():
+                    if text and text.strip():
                         # Clean up PDF-specific artifacts
                         text = re.sub(r'\s*\n\s*', ' ', text)
                         text = re.sub(r'\s+', ' ', text)
