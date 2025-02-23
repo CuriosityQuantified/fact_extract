@@ -14,6 +14,7 @@
 - Use 'gpt-4o' as the model name for OpenAI's GPT-4 with vision capabilities
 - SYNTHETIC_ARTICLE_5 test revealed that our fact extraction system is accepting statements that don't meet our strict criteria for facts (no specific metrics, measurements, or verifiable data points)
 - Fixed fact extraction system to strictly require measurable data points, resulting in correct handling of SYNTHETIC_ARTICLE_5 (no facts extracted from text without specific metrics)
+- Updated metric requirements to allow one clear, measurable metric (instead of two) while maintaining high standards for context and specificity, successfully tested with SYNTHETIC_ARTICLE_6
 
 ## LangGraph
 - The `interrupt` function import location has changed in recent versions of LangGraph. Try these import paths in order:
@@ -23,53 +24,51 @@
 
 # Scratchpad
 
-## Current Task: Fix Fact Extraction for SYNTHETIC_ARTICLE_5 [COMPLETED]
-The fact extraction system was accepting statements from SYNTHETIC_ARTICLE_5 that didn't meet our strict criteria for facts. This has been fixed by updating the prompts.
+## Current Task: Test Updated Fact Extraction Prompts with SYNTHETIC_ARTICLE_6 [COMPLETED]
+Testing the fact extraction system with updated prompts that require one clear, measurable metric instead of two.
 
 ### Requirements [✓]
-1. Ensure extracted facts contain ONLY:
-   - Concrete numerical data or statistics [✓]
-   - Named entities with specific metrics [✓]
-   - Complete technical context with measurable data [✓]
-   - Direct statements with verifiable measurements [✓]
+1. Ensure extracted facts contain:
+   - At least ONE concrete numerical data point [✓]
+   - Complete technical context [✓]
+   - Proper units for all measurements [✓]
+   - Full proper names for entities [✓]
 
-2. Reject statements that are:
-   - General observations without metrics [✓]
-   - Trends without specific numbers [✓]
-   - Claims about evolution or changes without measurements [✓]
-   - Statements about requirements or needs without data [✓]
-   - Future predictions or possibilities without concrete data [✓]
+2. Reject statements that:
+   - Lack specific metrics [✓]
+   - Have no measurable data points [✓]
+   - Cannot be independently verified [✓]
 
-### Implementation Progress
-[X] Identify issue with fact extraction from SYNTHETIC_ARTICLE_5
-[X] Update fact extractor prompt to be more strict
-[X] Update fact verification prompt to reject non-measurable statements
-[X] Test changes with SYNTHETIC_ARTICLE_5
-[X] Verify no facts are extracted from the article
+### Test Results
+[X] Clear processed chunks
+[X] Run test with SYNTHETIC_ARTICLE_6
+[X] Verify correct fact extraction
+[X] Confirm proper fact verification
 
-### Changes Made
-1. Fact Extractor Prompt:
-   - Added strict requirements for specific metrics and measurements
-   - Added new examples of invalid facts without metrics
-   - Enhanced criteria for rejecting statements without data
-   - Added more specific checks for numerical values
+### Findings
+1. Successfully Verified Fact:
+   - TSMC's 1-nanometer process node achievement
+   - Contains specific metrics:
+     * Transistor density: 400M/mm²
+     * Power efficiency: 0.2W/M transistors
+   - Includes proper context and entity names
 
-2. Fact Verification Prompt:
-   - Added strict requirements for measurable data
-   - Added new examples of false positives without metrics
-   - Enhanced rejection criteria for non-quantifiable statements
-   - Added more specific checks for numerical values
+2. Correctly Rejected Fact:
+   - EUV lithography adoption statement
+   - Rejected due to:
+     * No specific metrics
+     * Lack of measurable data
+     * No concrete, testable claims
 
-### Results
-- System now correctly identifies that SYNTHETIC_ARTICLE_5 contains no valid facts
-- All statements without specific metrics are properly rejected
-- Test confirms no facts are extracted from the article
-- Prompts successfully enforce requirement for measurable data
+### Conclusion
+- Updated prompts are working as intended
+- Balance achieved between strictness and practicality
+- Maintains high standards for fact verification while allowing reasonable flexibility
 
 ### Next Steps
-1. Consider testing with other articles to ensure we haven't made the criteria too strict
-2. Update documentation to reflect the stricter requirements
-3. Consider adding more test cases specifically for metric requirements
+[ ] Consider testing with more diverse articles
+[ ] Monitor for any edge cases
+[ ] Update documentation with new criteria
 
 ### Code Structure
 ```
