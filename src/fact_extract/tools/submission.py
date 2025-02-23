@@ -7,6 +7,7 @@ from typing import Dict, Optional, Type
 from datetime import datetime
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
+from langchain_openai import ChatOpenAI
 
 from ..storage.fact_repository import FactRepository
 from ..agents.verification import FactVerificationAgent
@@ -15,88 +16,94 @@ logger = logging.getLogger(__name__)
 
 # Initialize shared instances
 _repository = FactRepository()
-_verifier = FactVerificationAgent()
+_llm = ChatOpenAI(
+    model="gpt-3.5-turbo",
+    temperature=0  # Keep temperature at 0 for consistent outputs
+)
+_verifier = FactVerificationAgent(llm=_llm)
 
-class SubmitFactInput(BaseModel):
-    fact_text: str = Field(..., description="The actual fact statement to be verified and stored")
-    document_name: str = Field(..., description="Name or title of the source document")
+class FactSubmissionInput(BaseModel):
+    """Input for fact submission."""
+    fact_text: str = Field(..., description="The fact statement to submit")
+    document_name: str = Field(..., description="Name of the source document")
     source_url: str = Field(..., description="URL or identifier of the source")
-    original_text: str = Field(..., description="The complete context from which the fact was extracted")
-    confidence: float = Field(..., description="Initial confidence score from the extraction process")
-    chunk_index: int = Field(..., description="Index of the text chunk from which the fact was extracted")
+    original_text: str = Field(..., description="Original text the fact was extracted from")
+    chunk_index: int = Field(..., description="Index of the source chunk")
 
-class SubmitFactTool(BaseTool):
-    name: str = "submit_fact"
-    description: str = """Submit a fact for verification and storage in the knowledge base.
+class FactSubmissionTool:
+    """Tool for submitting facts for verification and storage."""
     
-    This tool performs two main functions:
-    1. Verifies the fact using an LLM-based verification agent
-    2. Stores approved facts in a structured repository
-    
-    The verification process checks for:
-    - Objectivity: Must be a purely factual statement without opinions
-    - Verifiability: Must be independently verifiable
-    - Specificity: Must contain concrete, specific information
-    - Context Consistency: Must align with the provided context
-    - Significance: Must be meaningful and non-trivial
-    
-    The storage process:
-    - Checks for duplicates to prevent redundancy
-    - Maintains metadata and provenance information
-    - Tracks verification status and reasoning
-    - Preserves original context
-    """
-    args_schema: Type[BaseModel] = SubmitFactInput
-    
-    def _run(self, fact_text: str, document_name: str, source_url: str, original_text: str, confidence: float, chunk_index: int) -> Dict:
+    def __init__(self, verifier: FactVerificationAgent, repository: FactRepository):
+        """Initialize the submission tool.
+        
+        Args:
+            verifier: Agent for verifying facts
+            repository: Repository for storing facts
+        """
+        self.verifier = verifier
+        self.repository = repository
+        
+    def _run(self, fact_text: str, document_name: str, source_url: str, original_text: str, chunk_index: int) -> Dict:
+        """Run the fact submission workflow.
+        
+        Args:
+            fact_text: The fact statement to submit
+            document_name: Name of the source document
+            source_url: URL or identifier of the source
+            original_text: Original text the fact was extracted from
+            chunk_index: Index of the source chunk
+            
+        Returns:
+            Dict containing submission result
+        """
         try:
             # Verify the fact
-            verification = _verifier.verify_fact(
-                fact_text=fact_text,
-                original_text=original_text
-            )
+            verification = self.verifier.verify_fact(fact_text, original_text)
             
-            if not verification.is_valid:
+            # If verification failed due to error, store as unverified
+            if not verification.is_valid and "failed" in verification.reason.lower():
                 return {
-                    "status": "rejected",
-                    "reason": verification.reason,
-                    "confidence": verification.confidence
+                    "success": False,
+                    "error": verification.reason,
+                    "fact_data": {
+                        "statement": fact_text,
+                        "document_name": document_name,
+                        "source_url": source_url,
+                        "original_text": original_text,
+                        "source_chunk": chunk_index,
+                        "verification_status": "failed",
+                        "verification_reason": verification.reason,
+                        "metadata": {"submission_time": datetime.now().isoformat()}
+                    }
                 }
             
-            # Prepare fact data for storage
+            # Store the fact with verification result
             fact_data = {
-                "timestamp": datetime.now().isoformat(),
+                "statement": fact_text,
                 "document_name": document_name,
                 "source_url": source_url,
                 "original_text": original_text,
-                "fact_text": fact_text,
-                "confidence": min(confidence, verification.confidence),  # Use lower confidence
-                "review_status": "approved",
-                "review_reason": verification.reason,
-                "chunk_index": chunk_index
+                "source_chunk": chunk_index,
+                "verification_status": "verified" if verification.is_valid else "rejected",
+                "verification_reason": verification.reason,
+                "metadata": {"submission_time": datetime.now().isoformat()}
             }
             
-            # Store the fact
-            if _repository.store_fact(fact_data):
-                return {
-                    "status": "approved",
-                    "reason": verification.reason,
-                    "confidence": verification.confidence
-                }
-            else:
-                return {
-                    "status": "storage_failed",
-                    "reason": "Failed to store fact (possibly duplicate)",
-                    "confidence": verification.confidence
-                }
-                
+            success = self.repository.store_fact(fact_data)
+            
+            return {
+                "success": success,
+                "error": None if success else "Failed to store fact",
+                "fact_data": fact_data
+            }
+            
         except Exception as e:
             error_msg = f"Fact submission failed: {str(e)}"
             logger.error(error_msg)
             return {
-                "status": "error",
-                "reason": error_msg,
-                "confidence": 0.0
+                "success": False,
+                "error": error_msg,
+                "fact_data": None
             }
 
-submit_fact = SubmitFactTool() 
+submit_fact = FactSubmissionTool(_verifier, _repository) 

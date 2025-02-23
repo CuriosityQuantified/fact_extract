@@ -29,8 +29,7 @@ class FactRepository:
             "source_url",         # URL or identifier of source
             "original_text",      # Text chunk containing the fact
             "fact_text",         # The extracted fact statement
-            "confidence",        # Confidence score from extraction
-            "verification_status", # Verification status (pending/approved/rejected)
+            "verification_status", # Verification status (pending/verified/rejected)
             "verification_reason", # Reason for verification decision
             "verification_time",  # When the fact was verified
             "chunk_index",       # Index of chunk in original document
@@ -52,7 +51,6 @@ class FactRepository:
                     'source_url': str,
                     'original_text': str,
                     'fact_text': str,
-                    'confidence': float,
                     'verification_status': str,
                     'verification_reason': str,
                     'verification_time': str,
@@ -89,7 +87,6 @@ class FactRepository:
                 'source_url': str,
                 'original_text': str,
                 'fact_text': str,
-                'confidence': float,
                 'verification_status': str,
                 'verification_reason': str,
                 'verification_time': str,
@@ -125,7 +122,6 @@ class FactRepository:
                 "source_url": fact_data.get("source_url", ""),
                 "original_text": fact_data.get("original_text", ""),
                 "fact_text": fact_data["statement"],
-                "confidence": float(fact_data["confidence"]),
                 "verification_status": str(fact_data["verification_status"]),
                 "verification_reason": str(fact_data.get("verification_reason", "")),
                 "verification_time": str(fact_data.get("verification_time", "")),
@@ -152,7 +148,6 @@ class FactRepository:
     def get_facts(
         self, 
         document_name: Optional[str] = None,
-        min_confidence: float = 0.0,
         verification_status: Optional[str] = None,
         chunk_index: Optional[int] = None,
         extraction_model: Optional[str] = None
@@ -161,7 +156,6 @@ class FactRepository:
         
         Args:
             document_name: Filter by source document name
-            min_confidence: Minimum confidence score
             verification_status: Filter by verification status
             chunk_index: Filter by source chunk index
             extraction_model: Filter by extraction model used
@@ -175,8 +169,6 @@ class FactRepository:
             # Apply filters
             if document_name:
                 df = df[df['document_name'] == document_name]
-            if min_confidence > 0:
-                df = df[df['confidence'] >= min_confidence]
             if verification_status:
                 df = df[df['verification_status'].fillna('pending') == verification_status]
             if chunk_index is not None:
@@ -195,7 +187,6 @@ class FactRepository:
             for _, row in df.iterrows():
                 facts.append({
                     "statement": row["fact_text"],
-                    "confidence": row["confidence"],
                     "source_chunk": row["chunk_index"],
                     "document_name": row["document_name"],
                     "source_url": row["source_url"],
@@ -238,7 +229,6 @@ class FactRepository:
                 'source_url': str,
                 'original_text': str,
                 'fact_text': str,
-                'confidence': float,
                 'verification_status': str,
                 'verification_reason': str,
                 'verification_time': str,
@@ -285,10 +275,9 @@ class FactRepository:
             
             stats = {
                 'total_facts': len(df),
-                'verified_facts': len(df[df['verification_status'] == 'approved']),
+                'verified_facts': len(df[df['verification_status'] == 'verified']),
                 'rejected_facts': len(df[df['verification_status'] == 'rejected']),
-                'pending_facts': len(df[df['verification_status'] == 'pending']),
-                'average_confidence': df['confidence'].mean() if not df.empty else 0.0
+                'pending_facts': len(df[df['verification_status'] == 'pending'])
             }
             
             return stats
@@ -299,6 +288,5 @@ class FactRepository:
                 'total_facts': 0,
                 'verified_facts': 0,
                 'rejected_facts': 0,
-                'pending_facts': 0,
-                'average_confidence': 0.0
+                'pending_facts': 0
             } 

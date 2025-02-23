@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 class ChunkRepository:
     """Manages storage and retrieval of processed text chunks."""
     
-    def __init__(self, file_path: str = "processed_chunks.xlsx"):
+    def __init__(self, file_path: str = "processed_chunks.xlsx", unprocessed_file_path: str = "unprocessed_chunks.xlsx"):
         """Initialize the chunk repository.
         
         Args:
             file_path: Path to the Excel file for storing chunks
+            unprocessed_file_path: Path to the Excel file for storing unprocessed chunks
         """
         self.file_path = Path(file_path)
+        self.unprocessed_file_path = Path(unprocessed_file_path)
         self.columns = [
             "timestamp",           # When the chunk was processed
             "document_name",       # Name/title of source document
@@ -34,10 +36,19 @@ class ChunkRepository:
             "processing_time",    # Time taken to process
             "metadata"           # Additional chunk metadata (as JSON)
         ]
+        self.unprocessed_columns = [
+            "timestamp",           # When the chunk was processed
+            "document_name",       # Name/title of source document
+            "source_url",         # URL or identifier of source
+            "chunk_content",      # The actual text content
+            "chunk_index",        # Index in original document
+            "reason",             # Reason for not processing
+            "metadata"            # Additional metadata (as JSON)
+        ]
         self._initialize_storage()
     
     def _initialize_storage(self) -> None:
-        """Create the Excel file if it doesn't exist."""
+        """Create the Excel files if they don't exist."""
         try:
             if not self.file_path.exists():
                 pd.DataFrame(columns=self.columns).to_excel(
@@ -46,6 +57,14 @@ class ChunkRepository:
                     engine='openpyxl'
                 )
                 logger.info(f"Created new chunk repository at {self.file_path}")
+                
+            if not self.unprocessed_file_path.exists():
+                pd.DataFrame(columns=self.unprocessed_columns).to_excel(
+                    self.unprocessed_file_path,
+                    index=False,
+                    engine='openpyxl'
+                )
+                logger.info(f"Created new unprocessed chunk repository at {self.unprocessed_file_path}")
         except Exception as e:
             logger.error(f"Failed to initialize chunk storage: {str(e)}")
             raise
@@ -74,7 +93,7 @@ class ChunkRepository:
                 (df['chunk_content'] == content) & 
                 (df['document_name'] == document_name) &
                 (df['chunk_index'] == chunk_index) &
-                (df['status'] == 'success')
+                (df['status'] == 'processed')
             ]
             
             return not matching_chunks.empty
@@ -213,4 +232,50 @@ class ChunkRepository:
                 
         except Exception as e:
             logger.error(f"Failed to update chunk status: {str(e)}")
+            return False
+    
+    def store_unprocessed_chunk(self, chunk_data: Dict) -> bool:
+        """Store a chunk that won't be processed for fact extraction.
+        
+        Args:
+            chunk_data: Dictionary containing chunk data matching unprocessed column schema
+            
+        Returns:
+            bool: True if stored successfully
+        """
+        try:
+            # Read existing unprocessed chunks
+            df = pd.read_excel(self.unprocessed_file_path, engine='openpyxl')
+            
+            # Add timestamp if not provided
+            if 'timestamp' not in chunk_data:
+                chunk_data['timestamp'] = datetime.now().isoformat()
+            
+            # Validate required columns
+            missing_cols = set(self.unprocessed_columns) - set(chunk_data.keys())
+            if missing_cols:
+                logger.error(f"Missing required columns for unprocessed chunk: {missing_cols}")
+                return False
+            
+            # Check for existing chunk with same content and index
+            existing_chunk = df[
+                (df['chunk_content'] == chunk_data['chunk_content']) & 
+                (df['document_name'] == chunk_data['document_name']) &
+                (df['chunk_index'] == chunk_data['chunk_index'])
+            ]
+            
+            if not existing_chunk.empty:
+                logger.info(f"Unprocessed chunk {chunk_data['chunk_index']} from {chunk_data['document_name']} already exists")
+                return True
+            
+            # Store new chunk
+            new_row = pd.DataFrame([chunk_data], columns=self.unprocessed_columns)
+            df = pd.concat([df, new_row], ignore_index=True)
+            logger.info(f"Added new unprocessed chunk {chunk_data['chunk_index']} from {chunk_data['document_name']}")
+            
+            df.to_excel(self.unprocessed_file_path, index=False, engine='openpyxl')
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to store unprocessed chunk: {str(e)}")
             return False 

@@ -16,9 +16,7 @@ setup(
         "pydantic>=2.0.0",
         "python-dotenv>=1.0.0",
         "typing-extensions>=4.5.0",
-        "tiktoken>=0.5.2",
-        "groq>=0.4.0",
-        "langchain-groq>=0.1.0"
+        "tiktoken>=0.5.2"
     ],
     python_requires=">=3.8",
     author="Your Name",

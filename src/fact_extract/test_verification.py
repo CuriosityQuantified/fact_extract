@@ -44,11 +44,7 @@ def test_verification_exact_match():
     print("verify_fact completed")
     sys.stdout.flush()
     
-    print("\nVerification Result:")
-    print(f"Reason: {result.reason}")
-    print(f"Valid: {result.is_valid}")
-    print(f"Confidence: {result.confidence}")
-    sys.stdout.flush()
+    print_verification_result(result)
 
 def test_verification_paraphrase():
     """Test verification with a paraphrased quote."""
@@ -77,11 +73,7 @@ def test_verification_paraphrase():
     print("verify_fact completed")
     sys.stdout.flush()
     
-    print("\nVerification Result:")
-    print(f"Reason: {result.reason}")
-    print(f"Valid: {result.is_valid}")
-    print(f"Confidence: {result.confidence}")
-    sys.stdout.flush()
+    print_verification_result(result)
 
 def test_verification_partial_quote():
     """Test verification with a partial quote."""
@@ -111,11 +103,14 @@ def test_verification_partial_quote():
     print("verify_fact completed")
     sys.stdout.flush()
     
+    print_verification_result(result)
+
+def print_verification_result(result: VerificationResult):
+    """Print a verification result."""
     print("\nVerification Result:")
-    print(f"Reason: {result.reason}")
     print(f"Valid: {result.is_valid}")
-    print(f"Confidence: {result.confidence}")
-    sys.stdout.flush()
+    print(f"Reason: {result.reason}")
+    print()
 
 def main():
     """Run all verification tests."""

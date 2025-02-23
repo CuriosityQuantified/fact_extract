@@ -7,73 +7,88 @@
 # Lessons
 [Standard lessons content as provided]
 
+## Cursor learned
+- For search results, ensure proper handling of different character encodings (UTF-8) for international queries
+- Add debug information to stderr while keeping the main output clean in stdout for better pipeline integration
+- When using seaborn styles in matplotlib, use 'seaborn-v0_8' instead of 'seaborn' as the style name due to recent seaborn version changes
+- Use 'gpt-4o' as the model name for OpenAI's GPT-4 with vision capabilities
+- SYNTHETIC_ARTICLE_5 test revealed that our fact extraction system is accepting statements that don't meet our strict criteria for facts (no specific metrics, measurements, or verifiable data points)
+- Fixed fact extraction system to strictly require measurable data points, resulting in correct handling of SYNTHETIC_ARTICLE_5 (no facts extracted from text without specific metrics)
+
+## LangGraph
+- The `interrupt` function import location has changed in recent versions of LangGraph. Try these import paths in order:
+  1. `from langgraph.prebuilt.tool_executor import interrupt`
+  2. `from langgraph.types import interrupt`
+  3. `from langgraph.prebuilt import interrupt`
+
 # Scratchpad
 
-## Current Task: Implementing Fact Submission and Storage System
-Adding functionality to verify and store extracted facts in a structured format.
+## Current Task: Fix Fact Extraction for SYNTHETIC_ARTICLE_5 [COMPLETED]
+The fact extraction system was accepting statements from SYNTHETIC_ARTICLE_5 that didn't meet our strict criteria for facts. This has been fixed by updating the prompts.
+
+### Requirements [✓]
+1. Ensure extracted facts contain ONLY:
+   - Concrete numerical data or statistics [✓]
+   - Named entities with specific metrics [✓]
+   - Complete technical context with measurable data [✓]
+   - Direct statements with verifiable measurements [✓]
+
+2. Reject statements that are:
+   - General observations without metrics [✓]
+   - Trends without specific numbers [✓]
+   - Claims about evolution or changes without measurements [✓]
+   - Statements about requirements or needs without data [✓]
+   - Future predictions or possibilities without concrete data [✓]
 
 ### Implementation Progress
-[X] Set up basic project structure
-[X] Create requirements.txt
-[X] Implement state models (TextChunk, Fact, WorkflowState)
-[X] Create LangGraph nodes (chunker, extractor)
-[X] Implement workflow graph
-[X] Add configuration utilities
-[X] Create main entry point
-[X] Improve text chunking with RecursiveCharacterTextSplitter
-[ ] Implement fact storage system
-[ ] Create fact verification agent
-[ ] Add fact submission tool
-[ ] Integrate with existing workflow
-[ ] Add tests
-[ ] Update documentation
+[X] Identify issue with fact extraction from SYNTHETIC_ARTICLE_5
+[X] Update fact extractor prompt to be more strict
+[X] Update fact verification prompt to reject non-measurable statements
+[X] Test changes with SYNTHETIC_ARTICLE_5
+[X] Verify no facts are extracted from the article
 
-### Current Implementation Features
-1. Advanced recursive text chunking:
-   - Splits on paragraphs, newlines, sentences, and words
-   - Configurable chunk size and overlap
-   - Preserves context between chunks
-   - Detailed chunk metadata
-2. GPT-4-mini based fact extraction
-3. Confidence scoring for each fact
-4. Source tracking (which chunk produced each fact)
-5. Basic error handling
-6. Command-line interface
+### Changes Made
+1. Fact Extractor Prompt:
+   - Added strict requirements for specific metrics and measurements
+   - Added new examples of invalid facts without metrics
+   - Enhanced criteria for rejecting statements without data
+   - Added more specific checks for numerical values
+
+2. Fact Verification Prompt:
+   - Added strict requirements for measurable data
+   - Added new examples of false positives without metrics
+   - Enhanced rejection criteria for non-quantifiable statements
+   - Added more specific checks for numerical values
+
+### Results
+- System now correctly identifies that SYNTHETIC_ARTICLE_5 contains no valid facts
+- All statements without specific metrics are properly rejected
+- Test confirms no facts are extracted from the article
+- Prompts successfully enforce requirement for measurable data
 
 ### Next Steps
-1. Create FactRepository class for Excel storage
-2. Implement fact verification agent
-3. Build submission tool
-4. Integrate with existing workflow
-5. Add tests
+1. Consider testing with other articles to ensure we haven't made the criteria too strict
+2. Update documentation to reflect the stricter requirements
+3. Consider adding more test cases specifically for metric requirements
 
 ### Code Structure
 ```
 src/fact_extract/
-├── __init__.py         # Package exports
-├── __main__.py         # CLI entry point
-├── models/
-│   └── state.py        # Data models
-├── graph/
-│   └── nodes.py        # LangGraph nodes
-├── storage/           # New directory
-│   └── fact_repository.py
 ├── agents/
-│   ├── prompts.py
+│   ├── prompts.py       # Target for modifications
 │   └── verification.py
-├── tools/
-│   └── submission.py
-└── utils/
-    └── config.py       # Configuration
+├── models/
+│   └── state.py        # State definitions
+└── graph/
+    └── nodes.py        # Workflow nodes
 ```
 
 ### Notes
-- Improved chunking using LangChain's RecursiveCharacterTextSplitter
-- Added detailed metadata for chunks and facts
-- Maintained simple but extensible architecture
-- Added graceful error handling in chunker
-- Focused on maintainability and readability
-- Using pandas for Excel management
-- Implementing verification before storage
-- Adding proper error handling
-- Maintaining modularity and DRY principles 
+- Current system is accepting general statements about:
+  * Cloud security evolution
+  * Organization requirements
+  * Mobile device security trends
+  * Future technology impacts
+- None of these statements contain concrete, measurable data
+- Need to make fact criteria more strict
+- Focus on requiring specific metrics and measurements 

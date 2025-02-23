@@ -14,7 +14,7 @@ from fact_extract.graph.nodes import create_workflow
 from fact_extract.models.state import create_initial_state
 from fact_extract.storage.chunk_repository import ChunkRepository
 from fact_extract.storage.fact_repository import FactRepository
-from fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_2
+from fact_extract.utils.synthetic_data import *
 
 # Configure logging
 logging.basicConfig(
@@ -39,7 +39,6 @@ def format_fact_output(fact: Dict) -> str:
     # Format the output
     lines = [
         f"• Statement: {fact['statement']}",
-        f"  Confidence: {fact['confidence']:.2f}",
         f"  Source Chunk: {fact['source_chunk']}",
         f"  Status: {status.upper()}",
     ]
@@ -94,6 +93,38 @@ async def extract_facts(
         logger.error(f"Fact extraction failed: {str(e)}")
         return []
 
+def print_fact(fact: Dict):
+    """Print a single fact with its metadata."""
+    print(
+        "\nFact:",
+        f"  Statement: {fact['statement']}",
+        f"  Source: {fact['document_name']}",
+        f"  Chunk: {fact['source_chunk']}",
+        f"  Status: {fact['verification_status']}",
+        sep="\n"
+    )
+    if fact.get('verification_reason'):
+        print(f"  Reason: {fact['verification_reason']}")
+    print()
+
+def print_stats(facts: List[Dict]):
+    """Print statistics about extracted facts."""
+    if not facts:
+        print("No facts found.")
+        return
+        
+    total = len(facts)
+    verified = len([f for f in facts if f["verification_status"] == "verified"])
+    rejected = len([f for f in facts if f["verification_status"] == "rejected"])
+    pending = total - verified - rejected
+    
+    print(f"\nFact Statistics:")
+    print(f"Total facts: {total}")
+    print(f"Verified: {verified}")
+    print(f"Rejected: {rejected}")
+    print(f"Pending: {pending}")
+    print()
+
 async def main():
     """Main entry point."""
     print("Extracting facts from synthetic article about sustainable data centers...")
@@ -102,7 +133,7 @@ async def main():
     try:
         # Extract facts
         facts = await extract_facts(
-            text=SYNTHETIC_ARTICLE_2,
+            text=SYNTHETIC_ARTICLE_3,
             document_name="Sustainable Data Centers Article",
             source_url="synthetic_data.py"
         )
@@ -134,7 +165,7 @@ async def main():
         
         for fact in facts:
             status = fact.get("verification_status", "pending")
-            if status == "approved":
+            if status == "verified":
                 approved.append(fact)
             elif status == "rejected":
                 rejected.append(fact)
@@ -143,7 +174,7 @@ async def main():
         
         # Print results by category
         if approved:
-            print("\nApproved Facts:")
+            print("\nVerified Facts:")
             print("-" * 80)
             for fact in approved:
                 print(format_fact_output(fact))
@@ -164,22 +195,13 @@ async def main():
                 print()
         
         # Print statistics
-        print("\nStatistics:")
-        print("-" * 80)
-        print(f"Total facts processed: {len(facts)}")
-        print(f"Approved facts: {len(approved)}")
-        print(f"Rejected facts: {len(rejected)}")
-        print(f"Pending facts: {len(pending)}")
+        print_stats(facts)
         
-        if facts:
-            avg_conf = sum(f["confidence"] for f in facts) / len(facts)
-            print(f"Average confidence: {avg_conf:.2f}")
-            
         # Get repository stats
         repo = FactRepository()
         stored_facts = repo.get_facts(
             document_name="Sustainable Data Centers Article",
-            verification_status="approved"
+            verification_status="verified"
         )
         print(f"Facts stored in repository: {len(stored_facts)}")
             

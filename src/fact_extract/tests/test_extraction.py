@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Verify required API keys are present
-required_keys = ['GROQ_API_KEY', 'OPENAI_API_KEY']
+required_keys = ['OPENAI_API_KEY']
 missing_keys = [key for key in required_keys if not os.getenv(key)]
 if missing_keys:
     raise ValueError(f"Missing required API keys: {', '.join(missing_keys)}")

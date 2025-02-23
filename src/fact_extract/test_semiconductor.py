@@ -1,11 +1,12 @@
 """
-Test script for fact extraction using synthetic data.
+Test script for fact extraction from semiconductor article.
 """
 
+import asyncio
 from typing import Dict, List
 import sys
 
-from src.fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_2
+from src.fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_6
 from src.fact_extract.__main__ import extract_facts
 
 def print_facts(facts: List[Dict]):
@@ -38,37 +39,29 @@ def print_facts(facts: List[Dict]):
     print(f"Pending facts: {pending}")
     print()
 
-async def test_extraction(text: str, document_name: str = "test_doc"):
-    """Test fact extraction on a piece of text."""
-    # Initialize state
-    state = create_initial_state()
-    state.text = text
-    state.document_name = document_name
-    
-    # Run chunker
-    state = await chunker_node(state)
-    print(f"Split into {len(state.chunks)} chunks")
-    
-    # Run extractor
-    state = await extractor_node(state)
-    print(f"Extracted {len(state.facts)} facts")
-    
-    # Print results
-    print_facts(state.facts)
-    return state.facts
-
-def main():
-    """Main test function."""
-    print("Testing fact extraction on sustainable data centers article...")
+async def test_extraction():
+    """Test fact extraction on semiconductor article."""
+    print("Testing fact extraction on semiconductor article...")
     print("-" * 80)
+    print("\nArticle content:")
+    print("-" * 80)
+    print(SYNTHETIC_ARTICLE_6[:500] + "...")  # Print first 500 chars
     
     try:
-        facts = extract_facts(SYNTHETIC_ARTICLE_2)
+        facts = await extract_facts(
+            text=SYNTHETIC_ARTICLE_6,
+            document_name="SYNTHETIC_ARTICLE_6"
+        )
         print_facts(facts)
+        return facts
         
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
+
+def main():
+    """Main test function."""
+    asyncio.run(test_extraction())
 
 if __name__ == "__main__":
     main() 

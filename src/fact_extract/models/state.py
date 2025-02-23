@@ -19,8 +19,10 @@ class TextChunkDict(TypedDict):
 class FactDict(TypedDict):
     """A single extracted fact."""
     statement: str  # The factual statement
-    confidence: float  # Confidence score of the extraction
     source_chunk: int  # Index of the chunk this fact was extracted from
+    document_name: str  # Name of the source document
+    source_url: str  # URL or identifier of source
+    original_text: str  # The original text from which the fact was extracted
     metadata: NotRequired[Dict]  # Additional metadata about the fact
     timestamp: str  # When the fact was extracted
     verification_status: str  # Status of fact verification

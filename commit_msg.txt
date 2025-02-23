@@ -1,21 +1,32 @@
-[Cursor] Initial implementation of fact extraction system
+[Cursor] Enhanced fact extraction and verification prompts
 
-Core features:
-- Text chunking with RecursiveCharacterTextSplitter
-- Fact extraction using LLM (Groq)
-- Fact verification with verbatim matching
-- Excel-based storage for chunks and facts
-- Improved chunk tracking and deduplication
-- Detailed logging and error handling
+Enhanced the fact extraction system to be more strict about requiring measurable data points while maintaining reasonable acceptance criteria:
 
-Components:
-- State models for workflow, chunks, and facts
-- LangGraph nodes (chunker, extractor, validator)
-- Storage repositories for chunks and facts
-- Configuration and utility modules
-- Basic test framework
+1. Added strong personas for both agents:
+   - Dr. Victoria Blackwood for verification (The Fact Assassin)
+   - Dr. Marcus Chen for extraction (The Data Purist)
 
-Next steps:
-- Implement feedback loop for non-verbatim facts
-- Add more comprehensive testing
-- Improve documentation 
+2. Strengthened fact criteria:
+   - Require at least ONE specific metric with proper context
+   - Require FULL proper names for entities
+   - Require units for ALL numerical values
+   - Require test conditions/context for ALL measurements
+   - Added emphasis on technical context completeness
+
+3. Added verification/extraction processes:
+   - Step-by-step procedures for evaluating facts
+   - More rigorous checks for completeness
+   - Stronger emphasis on direct verification
+
+4. Enhanced few-shot examples:
+   - Updated examples to demonstrate proper metric requirements
+   - Added more detailed reasoning for rejections
+   - Emphasized proper handling of related measurements
+
+5. Added test files:
+   - test_cybersecurity.py for SYNTHETIC_ARTICLE_5
+   - test_semiconductor.py for SYNTHETIC_ARTICLE_6
+
+Tested and verified:
+- SYNTHETIC_ARTICLE_5: Correctly rejects all statements (no measurable data)
+- SYNTHETIC_ARTICLE_6: Correctly extracts and verifies facts with proper metrics and context 
