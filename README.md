@@ -101,3 +101,47 @@ python -m pytest src/fact_extract/tests/test_document_processors_edge_cases.py
 ## License
 
 MIT License
+
+## GUI Usage
+
+The system includes a web-based GUI for easy document processing and fact extraction. To use the GUI:
+
+1. Install the required dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Launch the GUI:
+```bash
+python -m src.fact_extract.gui.app
+```
+
+3. Access the interface:
+- Open your web browser and navigate to `http://localhost:7860`
+- The interface will be available at this address while the server is running
+
+### Features
+
+- **Document Upload**: Drag and drop or click to upload multiple documents
+- **Supported Formats**: .txt, .pdf, .docx files (up to 10MB each)
+- **Real-time Processing**: Watch the extraction progress in real-time
+- **Interactive Results**: View extracted facts in a structured JSON format
+- **Error Handling**: Clear feedback for invalid files or processing errors
+
+### Usage Tips
+
+1. **File Preparation**:
+   - Ensure files are in supported formats (.txt, .pdf, .docx)
+   - Files should be under 10MB
+   - Text should be clear and well-formatted
+
+2. **Processing**:
+   - Upload one or more files
+   - Click "Start Processing" to begin extraction
+   - Monitor progress in the chat display
+   - View results in the JSON output area
+
+3. **Results**:
+   - Extracted facts are displayed per document
+   - Results can be copied or saved for further use
+   - Processing history is maintained during the session

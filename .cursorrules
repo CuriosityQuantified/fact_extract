@@ -15,6 +15,7 @@
 - SYNTHETIC_ARTICLE_5 test revealed that our fact extraction system is accepting statements that don't meet our strict criteria for facts (no specific metrics, measurements, or verifiable data points)
 - Fixed fact extraction system to strictly require measurable data points, resulting in correct handling of SYNTHETIC_ARTICLE_5 (no facts extracted from text without specific metrics)
 - Updated metric requirements to allow one clear, measurable metric (instead of two) while maintaining high standards for context and specificity, successfully tested with SYNTHETIC_ARTICLE_6
+- When using RecursiveCharacterTextSplitter, always create proper Document objects with page_content attribute before passing to split_documents() or transform_documents() methods to avoid "'dict' object has no attribute 'page_content'" errors
 
 ## LangGraph
 - The `interrupt` function import location has changed in recent versions of LangGraph. Try these import paths in order:
@@ -24,7 +25,143 @@
 
 # Scratchpad
 
-## Current Task: Test Updated Fact Extraction Prompts with SYNTHETIC_ARTICLE_6 [COMPLETED]
+## Current Task: Fact Extraction System Enhancement [COMPLETED]
+Implementing requested modifications to the fact extraction system.
+
+### Requirements [✓]
+1. Update chunking process to use words instead of characters [✓]
+   - Changed to 750 word chunks with 50 word overlaps
+   - Updated length_function to count words instead of characters
+   - Verified with test script
+
+2. Fix toggle behavior in GUI progress window [✓]
+   - Added persistent-details CSS class to prevent auto-closing
+   - Added custom CSS to ensure details elements stay open
+   - Implemented JavaScript with MutationObserver to track and maintain toggle states
+   - Added unique IDs to each details element for better state tracking
+   - Created helper method to consistently apply JavaScript after each update
+   - Replaced HTML details/summary with Gradio's native Accordion and Tabs components for better reliability
+   - Implemented a completely new tab-based interface for better visibility and accessibility
+
+3. Change "All Facts" to "All Submissions" [✓]
+   - Updated terminology throughout the GUI
+   - Ensured consistent use of "submissions" vs "facts"
+
+4. Fix GUI error with gr.Column parameter [✓]
+   - Removed invalid 'label' parameter from gr.Column constructor
+   - Added a Markdown heading inside the column instead
+   - Verified the GUI runs without errors
+
+### Implementation Details
+1. Chunking Changes:
+   - Modified RecursiveCharacterTextSplitter configuration in nodes.py
+   - Changed length_function to use word count: `lambda x: len(x.split())`
+   - Updated chunk_size to 750 and chunk_overlap to 50
+   - Created test_word_chunker.py to verify the implementation
+
+2. GUI Toggle Fix:
+   - Added 'persistent-details' CSS class to all details elements
+   - Added custom CSS to improve details appearance and styling
+   - Implemented JavaScript with MutationObserver to track open/closed states
+   - Added unique IDs to each details element for reliable state tracking
+   - Created format_facts_with_script helper method to ensure JavaScript runs after each update
+   - Used setTimeout to ensure DOM updates complete before restoring states
+   - Replaced HTML details/summary elements with Gradio's native Accordion and Tabs components
+   - Implemented update_facts_display function to rebuild components with proper state
+   - Completely redesigned the facts display using a dedicated tab-based interface
+   - Created separate tabs for All Submissions, Approved Facts, Rejected Submissions, and Errors
+   - Used Markdown formatting for better readability and consistency
+
+3. Terminology Updates:
+   - Changed "All Facts" to "All Submissions" in collapsible section headers
+   - Updated status messages to use consistent terminology
+   - Maintained "Facts" for verified items and "Submissions" for all items
+
+4. GUI Error Fix:
+   - Identified error: gr.Column() doesn't accept a 'label' parameter
+   - Removed the invalid parameter and added a Markdown heading inside the column
+   - Tested the fix to ensure the GUI runs without errors
+
+### Testing
+- Created and ran test_word_chunker.py to verify word-based chunking
+- Confirmed proper chunk sizes (750 words) and overlaps (50 words)
+- Verified all content is properly included in the chunks
+- Manually tested toggle behavior to ensure details elements stay open when new facts are added
+- Verified the GUI runs without errors after fixing the gr.Column parameter issue
+- Tested the new tab-based interface for displaying facts
+- Added debug information to help troubleshoot display issues
+
+### Next Steps
+[ ] Consider adding more robust error handling for document processing
+[ ] Add unit tests specifically for the chunking functionality
+[ ] Update documentation with best practices for using LangChain text splitters
+[ ] Improve the UI/UX with additional Gradio components for better visualization
+[ ] Add filtering and sorting options for facts in the GUI
+[ ] Implement export functionality for extracted facts
+
+## Previous Task: Fix Chunking Error in Fact Extraction System [COMPLETED]
+Fixing the error "Error in chunking: 'dict' object has no attribute 'page_content'" in the fact extraction workflow.
+
+### Requirements [✓]
+1. Identify the root cause of the chunking error [✓]
+2. Fix the chunking implementation [✓]
+3. Test the fix with a simplified test script [✓]
+4. Verify the fix works with the full workflow [✓]
+
+### Findings
+1. Root Cause:
+   - In `chunker_node` function, dictionaries were being passed directly to `transform_documents()`
+   - LangChain's text splitters expect Document objects with a `page_content` attribute
+   - The GUI implementation was correctly creating Document objects, but the main workflow wasn't
+
+2. Solution:
+   - Modified `chunker_node` to create proper Document objects before passing to the text splitter
+   - Changed from using `transform_documents([{...}])` to `split_documents([Document(...)])`
+   - Added proper imports for the Document class
+
+3. Test Results:
+   - Created a simplified test script (`test_chunker.py`) that verified the fix works
+   - Ran the full extraction test which successfully processed the text without errors
+   - The chunker now correctly splits text into manageable chunks
+
+### Code Changes
+```python
+# Before:
+text_splitter = RecursiveCharacterTextSplitter(
+    # ... configuration ...
+).transform_documents([{
+    "page_content": state["input_text"],
+    "metadata": {
+        "source": state["document_name"],
+        "url": state["source_url"]
+    }
+}])
+
+# After:
+text_splitter = RecursiveCharacterTextSplitter(
+    # ... configuration ...
+)
+
+# Create a proper Document object
+from langchain_core.documents import Document
+initial_doc = Document(
+    page_content=state["input_text"],
+    metadata={
+        "source": state["document_name"],
+        "url": state["source_url"]
+    }
+)
+
+# Split the document
+text_splitter = text_splitter.split_documents([initial_doc])
+```
+
+### Next Steps
+[ ] Consider adding more robust error handling for document processing
+[ ] Add unit tests specifically for the chunking functionality
+[ ] Update documentation with best practices for using LangChain text splitters
+
+## Previous Task: Test Updated Fact Extraction Prompts with SYNTHETIC_ARTICLE_6 [COMPLETED]
 Testing the fact extraction system with updated prompts that require one clear, measurable metric instead of two.
 
 ### Requirements [✓]

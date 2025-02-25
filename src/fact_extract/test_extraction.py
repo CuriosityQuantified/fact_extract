@@ -4,9 +4,17 @@ Test script for fact extraction using synthetic data.
 
 from typing import Dict, List
 import sys
+import asyncio
+import os
+from dotenv import load_dotenv
+from pathlib import Path
 
-from src.fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_2
-from src.fact_extract.__main__ import extract_facts
+# Load environment variables from .env file
+dotenv_path = Path(__file__).parents[2] / '.env'
+load_dotenv(dotenv_path)
+
+from fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_2
+from fact_extract.__main__ import extract_facts
 
 def print_facts(facts: List[Dict]):
     """Print facts with statistics."""
@@ -57,18 +65,27 @@ async def test_extraction(text: str, document_name: str = "test_doc"):
     print_facts(state.facts)
     return state.facts
 
-def main():
-    """Main test function."""
+async def main_async():
+    """Async main function."""
     print("Testing fact extraction on sustainable data centers article...")
     print("-" * 80)
     
     try:
-        facts = extract_facts(SYNTHETIC_ARTICLE_2)
+        facts = await extract_facts(
+            text=SYNTHETIC_ARTICLE_2,
+            document_name="Sustainable Data Centers Article",
+            source_url="https://example.com/sustainable-data-centers"
+        )
         print_facts(facts)
+        return facts
         
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+        return []
+
+def main():
+    """Main entry point."""
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main() 

@@ -3,10 +3,11 @@ State models for the fact extraction workflow using LangGraph v0.2.28+ patterns.
 These models define the data structures that flow through our LangGraph nodes.
 """
 
-from typing import List, Optional, Dict, TypedDict
+from typing import List, Optional, Dict, TypedDict, Any
 from typing_extensions import NotRequired
 from datetime import datetime
 from uuid import UUID
+from dataclasses import dataclass, field
 
 
 class TextChunkDict(TypedDict):
@@ -87,6 +88,21 @@ def create_initial_state(
     """
     from uuid import uuid4
     
+    # Initialize memory with default values
+    memory: MemoryDict = {
+        "document_stats": {},
+        "fact_patterns": [],
+        "entity_mentions": {},
+        "recent_facts": [],
+        "error_counts": {},
+        "performance_metrics": {
+            "start_time": datetime.now().isoformat(),
+            "chunks_processed": 0,
+            "facts_extracted": 0,
+            "errors_encountered": 0
+        }
+    }
+    
     return {
         "session_id": session_id or uuid4(),
         "input_text": input_text,
@@ -97,18 +113,99 @@ def create_initial_state(
         "extracted_facts": [],
         "errors": [],
         "is_complete": False,
-        "memory": {
-            "document_stats": {},
-            "fact_patterns": [],
-            "entity_mentions": {},
-            "recent_facts": [],
-            "error_counts": {},
-            "performance_metrics": {
-                "start_time": datetime.now().isoformat(),
-                "chunks_processed": 0,
-                "facts_extracted": 0,
-                "errors_encountered": 0
-            }
-        },
+        "memory": memory,
         "last_processed_time": datetime.now().isoformat()
-    } 
+    }
+
+
+@dataclass
+class ProcessingState:
+    """
+    Maintains state for document processing.
+    
+    Attributes:
+        processed_files: Set of files that have been processed
+        current_file: Currently processing file
+        facts: Dictionary of extracted facts by file
+        start_time: Processing start time
+        errors: List of processing errors
+    """
+    processed_files: set = field(default_factory=set)
+    current_file: Optional[str] = None
+    facts: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
+    start_time: Optional[datetime] = None
+    errors: List[Dict[str, Any]] = field(default_factory=list)
+    
+    def start_processing(self, file_path: str) -> None:
+        """
+        Start processing a file.
+        
+        Args:
+            file_path: Path to the file being processed
+        """
+        if not self.start_time:
+            self.start_time = datetime.now()
+        self.current_file = file_path
+    
+    def add_fact(self, file_path: str, fact: Dict[str, Any]) -> None:
+        """
+        Add an extracted fact.
+        
+        Args:
+            file_path: Source file path
+            fact: Extracted fact
+        """
+        if file_path not in self.facts:
+            self.facts[file_path] = []
+        self.facts[file_path].append(fact)
+    
+    def add_error(self, file_path: str, error: str) -> None:
+        """
+        Record a processing error.
+        
+        Args:
+            file_path: File that caused the error
+            error: Error message
+        """
+        self.errors.append({
+            "file": file_path,
+            "error": error,
+            "timestamp": datetime.now()
+        })
+    
+    def complete_file(self, file_path: str) -> None:
+        """
+        Mark a file as completely processed.
+        
+        Args:
+            file_path: Path to the completed file
+        """
+        self.processed_files.add(file_path)
+        if self.current_file == file_path:
+            self.current_file = None
+    
+    def get_progress(self) -> Dict[str, Any]:
+        """
+        Get current processing progress.
+        
+        Returns:
+            Dict with progress information
+        """
+        return {
+            "processed_files": len(self.processed_files),
+            "current_file": self.current_file,
+            "total_facts": sum(len(facts) for facts in self.facts.values()),
+            "error_count": len(self.errors),
+            "duration": (
+                (datetime.now() - self.start_time).total_seconds()
+                if self.start_time else 0
+            )
+        }
+    
+    def reset(self) -> None:
+        """Reset all state."""
+        self.processed_files.clear()
+        self.current_file = None
+        self.facts.clear()
+        self.start_time = None
+        self.errors.clear() 
