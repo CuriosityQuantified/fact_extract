@@ -5,6 +5,7 @@ This module provides a web interface for uploading documents and viewing fact ex
 
 import os
 import shutil
+import sys  # Added for stderr output
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -73,6 +74,16 @@ class FactExtractionGUI:
         
         # Store facts data for UI updates
         self.facts_data = {}
+        
+        # Debug mode
+        self.debug = True
+        print("DEBUG_INIT: FactExtractionGUI initialized")
+
+    def debug_print(self, message):
+        """Print debug message to stderr for visibility."""
+        if self.debug:
+            print(f"DEBUG: {message}", file=sys.stderr, flush=True)
+            print(f"DEBUG: {message}")  # Also to stdout for redundancy
 
     def format_facts_summary(self, facts: Dict) -> str:
         """Format summary of extracted facts."""
@@ -162,7 +173,7 @@ class FactExtractionGUI:
         """Process uploaded files and extract facts."""
         if self.processing:
             self.chat_history.append(create_message("Processing already in progress"))
-            yield self.chat_history, self.format_facts_summary({}), "No submissions yet.", "No approved facts yet.", "No rejected submissions yet.", "No errors."
+            yield self.chat_history, self.format_facts_summary({}), "No submissions yet.", "No approved facts yet.", "No rejected submissions yet.", "No errors.", []
             return
 
         self.processing = True
@@ -176,20 +187,20 @@ class FactExtractionGUI:
                 if not file.name:
                     self.chat_history.append(create_message("⚠️ Invalid file detected"))
                     # Update tabs with current facts data
-                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                     continue
 
                 self.chat_history.append(create_message(f"📄 Starting to process {file.name}..."))
-                yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
 
                 try:
                     self.chat_history.append(create_message("📖 Extracting text from file..."))
-                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                     
                     text = extract_text_from_file(file.name)
                     if not text:
                         self.chat_history.append(create_message(f"⚠️ No text could be extracted from {file.name}"))
-                        yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                        yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                         continue
 
                     self.chat_history.append(create_message("✅ Text extracted successfully"))
@@ -214,7 +225,7 @@ class FactExtractionGUI:
                         documents = text_splitter.split_documents([initial_doc])
                         
                         self.chat_history.append(create_message(f"📝 Split text into {len(documents)} chunks"))
-                        yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                        yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                         
                         # Initialize file facts structure
                         facts[file.name] = {
@@ -232,13 +243,13 @@ class FactExtractionGUI:
                                 facts[file.name]["errors"].append(error_msg)
                                 self.chat_history.append(create_message(f"⚠️ {error_msg}"))
                                 # Update tabs with current facts data
-                                yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                                yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                                 continue
                                 
                             # Get first 50 words as preview
                             preview = " ".join(doc.page_content.split()[:50]) + "..."
                             self.chat_history.append(create_message(f"🔄 Processing chunk {i} of {len(documents)}:\n{preview}"))
-                            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                             
                             # Create workflow state for this chunk
                             workflow_state = create_initial_state(
@@ -252,6 +263,13 @@ class FactExtractionGUI:
                             
                             if result and result.get("extracted_facts"):
                                 chunk_facts = result["extracted_facts"]
+                                
+                                # Add unique IDs to facts
+                                for fact in chunk_facts:
+                                    if "id" not in fact:
+                                        fact["id"] = id(fact)  # Use object id as unique identifier
+                                    fact["filename"] = file.name
+                                
                                 facts[file.name]["all_facts"].extend(chunk_facts)
                                 verified_facts = [f for f in chunk_facts if f.get("verification_status") == "verified"]
                                 facts[file.name]["verified_facts"].extend(verified_facts)
@@ -276,15 +294,18 @@ class FactExtractionGUI:
                             
                             # Store facts data for display
                             self.facts_data = facts
+                            
+                            # Get facts for review dropdown
+                            _, fact_choices = self.get_facts_for_review()
                                 
                             # Update tabs with current facts data
-                            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), fact_choices
                         
                     except Exception as e:
                         error_msg = f"Error splitting document: {str(e)}"
                         facts[file.name]["errors"].append(error_msg)
                         self.chat_history.append(create_message(f"⚠️ {error_msg}"))
-                        yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                        yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
 
                     self.chat_history.append(create_message(
                         f"✅ Completed processing {file.name}\n" +
@@ -292,46 +313,41 @@ class FactExtractionGUI:
                         f"Total facts approved: {facts[file.name]['verified_count']}\n" +
                         f"Total submissions rejected: {facts[file.name]['total_facts'] - facts[file.name]['verified_count']}"
                     ))
-                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                    
+                    # Get facts for review dropdown after processing file
+                    _, fact_choices = self.get_facts_for_review()
+                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), fact_choices
 
                 except Exception as e:
                     self.chat_history.append(create_message(f"⚠️ Error processing {file.name}: {str(e)}"))
-                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                    yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
                     continue
 
         except Exception as e:
             self.chat_history.append(create_message(f"⚠️ Error during processing: {str(e)}"))
-            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
 
         finally:
             self.processing = False
             if facts:
                 total_submitted = sum(f["total_facts"] for f in facts.values())
                 total_approved = sum(f["verified_count"] for f in facts.values())
+                
+                # Final summary message
                 self.chat_history.append(create_message(
-                    "✅ Processing complete\n" +
+                    f"✅ Processing complete!\n" +
                     f"Total submissions: {total_submitted}\n" +
                     f"Total facts approved: {total_approved}\n" +
-                    f"Total submissions rejected: {total_submitted - total_approved}\n" +
-                    f"Overall approval rate: {(total_approved/total_submitted*100):.1f}%"
+                    f"Total submissions rejected: {total_submitted - total_approved}\n\n" +
+                    f"Approval rate: {(total_approved/total_submitted*100):.1f}%" if total_submitted > 0 else "0%"
                 ))
                 
-                # Store facts data for display
-                self.facts_data = facts
-                
-                # Add debug information
-                print(f"DEBUG: Facts data structure: {len(facts)} files with data")
-                for filename, file_data in facts.items():
-                    print(f"DEBUG: File {filename}: {file_data.get('total_facts', 0)} total facts, {file_data.get('verified_count', 0)} verified")
-                    if file_data.get('all_facts'):
-                        print(f"DEBUG: First fact: {file_data['all_facts'][0]['statement'] if file_data['all_facts'] else 'None'}")
+                # Get facts for review dropdown after all processing
+                _, fact_choices = self.get_facts_for_review()
+                yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), fact_choices
             else:
                 self.chat_history.append(create_message("⚠️ No facts were extracted"))
-                # Clear facts data
-                self.facts_data = {}
-                print("DEBUG: No facts were extracted")
-                
-            yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts)
+                yield self.chat_history, self.format_facts_summary(facts), *self.format_tabs_content(facts), []
             
     def format_tabs_content(self, facts):
         """Format content for all tabs."""
@@ -394,9 +410,226 @@ class FactExtractionGUI:
             errors_md = "No errors."
         
         return all_submissions_md, approved_facts_md, rejected_facts_md, errors_md
+    
+    def get_facts_for_review(self):
+        """Get all facts available for review."""
+        self.debug_print(f"get_facts_for_review called, facts_data has {len(self.facts_data)} files")
+        
+        all_facts = []
+        fact_choices = []
+        
+        # Extract all facts from fact_data
+        for filename, file_facts in self.facts_data.items():
+            self.debug_print(f"Processing file: {filename}")
+            if file_facts.get("all_facts"):
+                self.debug_print(f"  File has {len(file_facts['all_facts'])} facts")
+                for i, fact in enumerate(file_facts["all_facts"]):
+                    # Add unique ID to fact if not present
+                    if "id" not in fact:
+                        fact["id"] = id(fact)  # Use object id as unique identifier
+                        self.debug_print(f"  Assigned new ID {fact['id']} to fact {i}")
+                    else:
+                        self.debug_print(f"  Fact {i} already has ID {fact['id']}")
+                    
+                    # Add filename to fact for reference
+                    fact["filename"] = filename
+                    
+                    # Add to all_facts list
+                    all_facts.append(fact)
+                    
+                    # Format choice as "status | first 40 chars of statement"
+                    status_emoji = "✅" if fact.get("verification_status") == "verified" else "❌" if fact.get("verification_status") == "rejected" else "⏳"
+                    preview = fact["statement"][:40] + "..." if len(fact["statement"]) > 40 else fact["statement"]
+                    choice_text = f"{status_emoji} {preview}"
+                    fact_choices.append(choice_text)
+                    self.debug_print(f"  Added choice: '{choice_text}'")
+            else:
+                self.debug_print(f"  File has no facts")
+        
+        # Debug information
+        self.debug_print(f"Found {len(all_facts)} facts for review")
+        for i, fact in enumerate(all_facts):
+            self.debug_print(f"Fact {i}: ID={fact.get('id')}, Statement={fact.get('statement', '')[:30]}...")
+        
+        self.debug_print(f"Returning {len(fact_choices)} choices for dropdown")
+        for i, choice in enumerate(fact_choices):
+            self.debug_print(f"  Choice {i}: '{choice}'")
+        
+        return all_facts, fact_choices
+    
+    def load_fact_for_review(self, fact_index):
+        """Load a fact into the review interface."""
+        self.debug_print(f"load_fact_for_review called with index: {fact_index} (type: {type(fact_index)})")
+        
+        if fact_index is None or fact_index == "":
+            self.debug_print("Empty fact_index, returning empty values")
+            return "", "", "", "", "pending", ""
+        
+        all_facts, fact_choices = self.get_facts_for_review()
+        self.debug_print(f"Got {len(all_facts)} facts and {len(fact_choices)} choices")
+        
+        # Convert string index to integer if needed
+        if isinstance(fact_index, str):
+            try:
+                fact_index = int(fact_index)
+                self.debug_print(f"Converted string index '{fact_index}' to integer")
+            except ValueError:
+                self.debug_print(f"Could not convert '{fact_index}' to integer - searching by value")
+                # Try to find the index by matching the choice text
+                for i, choice in enumerate(fact_choices):
+                    if choice == fact_index:
+                        fact_index = i
+                        self.debug_print(f"Found matching choice at index {i}")
+                        break
+                else:
+                    self.debug_print("No matching choice found - returning empty values")
+                    return "", "", "", "", "pending", ""
+        
+        # Validate index range
+        if not (0 <= fact_index < len(all_facts)):
+            self.debug_print(f"Index {fact_index} out of range (0-{len(all_facts)-1}) - returning empty values")
+            return "", "", "", "", "pending", ""
+        
+        # Get the selected fact
+        fact = all_facts[fact_index]
+        
+        # Debug information
+        self.debug_print(f"Loading fact with ID: {fact.get('id')}")
+        self.debug_print(f"Fact statement: {fact.get('statement', '')[:50]}...")
+        self.debug_print(f"Fact source: {fact.get('original_text', '')[:50]}...")
+        self.debug_print(f"Fact status: {fact.get('verification_status', 'pending')}")
+        
+        # Ensure all values are strings to avoid UI errors
+        fact_id_str = str(fact.get("id", ""))
+        filename_str = str(fact.get("filename", ""))
+        statement_str = str(fact.get("statement", ""))
+        source_str = str(fact.get("original_text", ""))
+        status_str = str(fact.get("verification_status", "pending"))
+        reason_str = str(fact.get("verification_reason", ""))
+        
+        self.debug_print(f"Returning values:")
+        self.debug_print(f"  ID: {fact_id_str}")
+        self.debug_print(f"  Filename: {filename_str}")
+        self.debug_print(f"  Statement: {statement_str[:50]}...")
+        self.debug_print(f"  Source: {source_str[:50]}...")
+        self.debug_print(f"  Status: {status_str}")
+        self.debug_print(f"  Reason: {reason_str[:50]}...")
+        
+        return (
+            fact_id_str,  # fact_id
+            filename_str,  # filename
+            statement_str,  # fact_statement
+            source_str,  # fact_source
+            status_str,  # fact_status
+            reason_str  # fact_reason
+        )
+    
+    def update_fact(self, fact_id, statement, status, reason):
+        """Update a fact with new information."""
+        self.debug_print(f"update_fact called with ID: {fact_id}")
+        self.debug_print(f"  Statement: {statement[:50]}...")
+        self.debug_print(f"  Status: {status}")
+        self.debug_print(f"  Reason: {reason[:50]}...")
+        
+        if not fact_id:
+            self.debug_print("No fact selected, returning error")
+            return "No fact selected", self.facts_data
+        
+        try:
+            # Convert fact_id back to integer (it comes as string from the UI)
+            try:
+                fact_id_int = int(fact_id)
+                self.debug_print(f"Converted fact_id to integer: {fact_id_int}")
+            except ValueError:
+                self.debug_print(f"Could not convert fact_id to integer: {fact_id}")
+                return f"Error: Invalid fact ID format: {fact_id}", self.facts_data
+            
+            # Find and update the fact in self.facts_data
+            found = False
+            for filename, file_facts in self.facts_data.items():
+                self.debug_print(f"Searching in file: {filename}")
+                if file_facts.get("all_facts"):
+                    for i, fact in enumerate(file_facts["all_facts"]):
+                        self.debug_print(f"  Checking fact {i} with ID: {fact.get('id')}")
+                        if fact.get("id") == fact_id_int:
+                            self.debug_print(f"  Found matching fact at index {i}")
+                            found = True
+                            
+                            # Store original values for debugging
+                            old_statement = fact.get("statement", "")
+                            old_status = fact.get("verification_status", "pending")
+                            old_reason = fact.get("verification_reason", "")
+                            
+                            # Update fact properties
+                            fact["statement"] = statement
+                            fact["verification_status"] = status
+                            fact["verification_reason"] = reason
+                            fact["human_reviewed"] = True
+                            fact["review_timestamp"] = datetime.now().isoformat()
+                            
+                            self.debug_print(f"  Updated fact:")
+                            self.debug_print(f"    Statement: {old_statement[:30]}... -> {statement[:30]}...")
+                            self.debug_print(f"    Status: {old_status} -> {status}")
+                            self.debug_print(f"    Reason: {old_reason[:30]}... -> {reason[:30]}...")
+                            
+                            # Update verified_facts list if applicable
+                            if status == "verified":
+                                # Remove from verified if already there (to avoid duplicates)
+                                verified_before = len(file_facts.get("verified_facts", []))
+                                file_facts["verified_facts"] = [f for f in file_facts.get("verified_facts", []) 
+                                                               if f.get("id") != fact_id_int]
+                                verified_after = len(file_facts["verified_facts"])
+                                
+                                self.debug_print(f"  Removed from verified_facts: {verified_before - verified_after} instances")
+                                
+                                # Add updated fact to verified list
+                                file_facts["verified_facts"].append(fact)
+                                self.debug_print(f"  Added to verified_facts, new count: {len(file_facts['verified_facts'])}")
+                            else:
+                                # Remove from verified if rejected or pending
+                                verified_before = len(file_facts.get("verified_facts", []))
+                                file_facts["verified_facts"] = [f for f in file_facts.get("verified_facts", []) 
+                                                               if f.get("id") != fact_id_int]
+                                verified_after = len(file_facts["verified_facts"])
+                                
+                                self.debug_print(f"  Removed from verified_facts: {verified_before - verified_after} instances")
+                            
+                            # Update counts
+                            old_verified_count = file_facts.get("verified_count", 0)
+                            verified_count = len([f for f in file_facts["all_facts"] 
+                                                 if f.get("verification_status") == "verified"])
+                            file_facts["verified_count"] = verified_count
+                            
+                            self.debug_print(f"  Updated verified count: {old_verified_count} -> {verified_count}")
+                            
+                            # Update fact choices for dropdown
+                            _, fact_choices = self.get_facts_for_review()
+                            self.debug_print(f"  Updated fact choices, now have {len(fact_choices)} choices")
+                            
+                            return f"Fact updated: {statement[:40]}...", self.facts_data
+            
+            if not found:
+                self.debug_print(f"Fact with ID {fact_id_int} not found in any file")
+                return f"Fact not found with ID: {fact_id}", self.facts_data
+                
+        except Exception as e:
+            import traceback
+            self.debug_print(f"Error updating fact: {str(e)}")
+            self.debug_print(f"Traceback: {traceback.format_exc()}")
+            return f"Error updating fact: {str(e)}", self.facts_data
+
+    def approve_fact(self, fact_id, statement, reason):
+        """Approve a fact with optional minor modifications."""
+        return self.update_fact(fact_id, statement, "verified", reason)
+
+    def reject_fact(self, fact_id, statement, reason):
+        """Reject a fact with reasoning."""
+        return self.update_fact(fact_id, statement, "rejected", reason)
 
     def build_interface(self) -> gr.Blocks:
         """Build the Gradio interface."""
+        self.debug_print("Building Gradio interface")
+        
         with gr.Blocks(title="Fact Extraction System", theme=self.theme) as interface:
             gr.Markdown("""
             # Fact Extraction System
@@ -435,38 +668,116 @@ class FactExtractionGUI:
                         height=400
                     )
             
-            # Facts output section
-            with gr.Row():
-                with gr.Column(elem_id="facts-container"):
-                    gr.Markdown("## Extracted Facts", elem_id="facts-heading")
-                    facts_summary = gr.Markdown(
-                        value="Upload a document to see extracted facts here.",
-                        elem_id="facts-summary"
-                    )
+            # Main tabs for different sections
+            with gr.Tabs(elem_id="main-tabs") as main_tabs:
+                # Facts output section
+                with gr.TabItem("Extracted Facts", elem_id="facts-tab"):
+                    with gr.Column(elem_id="facts-container"):
+                        facts_summary = gr.Markdown(
+                            value="Upload a document to see extracted facts here.",
+                            elem_id="facts-summary"
+                        )
+                        
+                        # Create tabs for different fact categories
+                        with gr.Tabs(elem_id="facts-tabs") as facts_tabs:
+                            with gr.TabItem("All Submissions", elem_id="all-submissions-tab"):
+                                all_submissions = gr.Markdown("No submissions yet.")
+                            
+                            with gr.TabItem("Approved Facts", elem_id="approved-facts-tab"):
+                                approved_facts = gr.Markdown("No approved facts yet.")
+                            
+                            with gr.TabItem("Rejected Submissions", elem_id="rejected-facts-tab"):
+                                rejected_facts = gr.Markdown("No rejected submissions yet.")
+                            
+                            with gr.TabItem("Errors", elem_id="errors-tab"):
+                                errors_display = gr.Markdown("No errors.")
+                
+                # Fact Review section
+                with gr.TabItem("Fact Review", elem_id="fact-review-tab"):
+                    self.debug_print("Building Fact Review tab")
                     
-                    # Create tabs for different fact categories
-                    with gr.Tabs(elem_id="facts-tabs") as facts_tabs:
-                        with gr.TabItem("All Submissions", elem_id="all-submissions-tab"):
-                            all_submissions = gr.Markdown("No submissions yet.")
-                        
-                        with gr.TabItem("Approved Facts", elem_id="approved-facts-tab"):
-                            approved_facts = gr.Markdown("No approved facts yet.")
-                        
-                        with gr.TabItem("Rejected Submissions", elem_id="rejected-facts-tab"):
-                            rejected_facts = gr.Markdown("No rejected submissions yet.")
-                        
-                        with gr.TabItem("Errors", elem_id="errors-tab"):
-                            errors_display = gr.Markdown("No errors.")
+                    # Debug display for troubleshooting
+                    debug_display = gr.Markdown("Debug information will appear here", visible=True)
+                    
+                    with gr.Row():
+                        # Left column for fact selection
+                        with gr.Column(scale=1):
+                            fact_selector = gr.Dropdown(
+                                label="Select Fact to Review",
+                                choices=[],
+                                value=None,  # Set initial value to None
+                                type="index",  # Changed to index type for more reliable selection
+                                interactive=True,
+                                allow_custom_value=False  # Don't allow custom values
+                            )
+                            self.debug_print("Created fact_selector dropdown")
+                            
+                            refresh_facts_btn = gr.Button("Refresh Facts List")
+                            self.debug_print("Created refresh_facts_btn")
+                                
+                        # Right column for fact details
+                        with gr.Column(scale=2):
+                            # Current fact details
+                            fact_id = gr.Textbox(label="Fact ID", visible=True)  # Made visible for debugging
+                            self.debug_print("Created fact_id textbox")
+                            
+                            fact_filename = gr.Textbox(label="Source Document", interactive=False)
+                            self.debug_print("Created fact_filename textbox")
+                            
+                            fact_statement = gr.Textbox(
+                                label="Fact Statement", 
+                                lines=3,
+                                interactive=True
+                            )
+                            self.debug_print("Created fact_statement textbox")
+                            
+                            fact_source = gr.Textbox(
+                                label="Source Text", 
+                                lines=5,
+                                interactive=False
+                            )
+                            self.debug_print("Created fact_source textbox")
+                            
+                            fact_status = gr.Radio(
+                                choices=["verified", "rejected", "pending"],
+                                label="Status",
+                                value="pending",
+                                interactive=True
+                            )
+                            self.debug_print("Created fact_status radio")
+                            
+                            fact_reason = gr.Textbox(
+                                label="Reasoning", 
+                                lines=3,
+                                placeholder="Provide reasoning for your decision",
+                                interactive=True
+                            )
+                            self.debug_print("Created fact_reason textbox")
+                                
+                    # Action buttons
+                    with gr.Row():
+                        approve_btn = gr.Button("Approve Fact", variant="primary")
+                        reject_btn = gr.Button("Reject Fact", variant="secondary")
+                        modify_btn = gr.Button("Save Modifications", variant="primary")
+                    self.debug_print("Created action buttons")
+                    
+                    # Status message
+                    review_status = gr.Markdown("")
+                    self.debug_print("Created review_status markdown")
             
             # Event handlers
             def update_facts_display(chat_history, facts_summary):
                 """Update the facts display with the current facts data."""
+                self.debug_print("update_facts_display called")
+                
                 if not self.facts_data:
-                    return chat_history, facts_summary, "No submissions yet.", "No approved facts yet.", "No rejected submissions yet.", "No errors."
+                    self.debug_print("No facts data available")
+                    return chat_history, facts_summary, "No submissions yet.", "No approved facts yet.", "No rejected submissions yet.", "No errors.", []
                 
                 # Format all submissions
                 all_submissions_md = ""
                 for filename, file_facts in self.facts_data.items():
+                    self.debug_print(f"Processing file: {filename}")
                     if file_facts.get("all_facts"):
                         all_submissions_md += f"\n## {filename}\n\n"
                         for i, fact in enumerate(file_facts["all_facts"]):
@@ -519,12 +830,47 @@ class FactExtractionGUI:
                 if not errors_md:
                     errors_md = "No errors."
                 
-                return chat_history, facts_summary, all_submissions_md, approved_facts_md, rejected_facts_md, errors_md
+                # Get updated fact choices for the dropdown
+                all_facts, fact_choices = self.get_facts_for_review()
+                self.debug_print(f"Got {len(fact_choices)} fact choices for dropdown")
+                
+                # Return updated dropdown choices
+                return (
+                    chat_history, 
+                    facts_summary, 
+                    all_submissions_md, 
+                    approved_facts_md, 
+                    rejected_facts_md, 
+                    errors_md, 
+                    gr.update(choices=fact_choices)  # Use gr.update to update dropdown choices
+                )
             
+            # Process files function
+            async def process_files_wrapper(files):
+                """Wrapper for process_files that ensures dropdown is properly updated."""
+                self.debug_print("process_files_wrapper called")
+                
+                # Call the original process_files function
+                async for result in self.process_files(files):
+                    chat_history, facts_summary, all_submissions_md, approved_facts_md, rejected_facts_md, errors_md, fact_choices = result
+                    
+                    # Get the current facts and choices
+                    all_facts, choices = self.get_facts_for_review()
+                    self.debug_print(f"After processing, got {len(all_facts)} facts and {len(choices)} choices")
+                    
+                    # Debug information about choices
+                    debug_info = f"Updated dropdown with {len(choices)} choices:\n"
+                    for i, choice in enumerate(choices):
+                        debug_info += f"Choice {i}: '{choice}'\n"
+                    
+                    # Yield the result with updated dropdown
+                    yield chat_history, facts_summary, all_submissions_md, approved_facts_md, rejected_facts_md, errors_md, gr.update(choices=choices, value=None), debug_info
+            
+            # Replace the original process_files with the wrapper
             process_btn.click(
-                fn=self.process_files,
+                fn=process_files_wrapper,
                 inputs=[file_input],
-                outputs=[chat_display, facts_summary, all_submissions, approved_facts, rejected_facts, errors_display],
+                outputs=[chat_display, facts_summary, all_submissions, approved_facts, rejected_facts, errors_display, fact_selector, debug_display],
                 api_name="process",
                 show_progress=True
             ).then(
@@ -548,12 +894,154 @@ class FactExtractionGUI:
                 outputs=file_input
             )
             
+            # Connect fact selector to display selected fact
+            def on_fact_selected(selected_index):
+                self.debug_print(f"on_fact_selected called with index: {selected_index} (type: {type(selected_index)})")
+                
+                # Get current facts and choices
+                all_facts, fact_choices = self.get_facts_for_review()
+                
+                # Debug information about available facts and choices
+                debug_info = [
+                    f"Selected index: {selected_index} (type: {type(selected_index)})",
+                    f"Number of facts: {len(all_facts)}",
+                    f"Number of choices: {len(fact_choices)}",
+                ]
+                
+                # Add information about each choice
+                for i, choice in enumerate(fact_choices):
+                    debug_info.append(f"Choice {i}: '{choice}'")
+                
+                # Handle invalid selection
+                if selected_index is None or selected_index == "" or not isinstance(selected_index, (int, str)):
+                    debug_info.append("Invalid selection - returning empty values")
+                    return "", "", "", "", "pending", "", "\n".join(debug_info)
+                
+                # Convert string index to integer if needed
+                if isinstance(selected_index, str):
+                    try:
+                        selected_index = int(selected_index)
+                        debug_info.append(f"Converted string index '{selected_index}' to integer")
+                    except ValueError:
+                        debug_info.append(f"Could not convert '{selected_index}' to integer - searching by value")
+                        # Try to find the index by matching the choice text
+                        for i, choice in enumerate(fact_choices):
+                            if choice == selected_index:
+                                selected_index = i
+                                debug_info.append(f"Found matching choice at index {i}")
+                                break
+                        else:
+                            debug_info.append("No matching choice found - returning empty values")
+                            return "", "", "", "", "pending", "", "\n".join(debug_info)
+                
+                # Validate index range
+                if not (0 <= selected_index < len(all_facts)):
+                    debug_info.append(f"Index {selected_index} out of range (0-{len(all_facts)-1}) - returning empty values")
+                    return "", "", "", "", "pending", "", "\n".join(debug_info)
+                
+                # Get the selected fact
+                fact = all_facts[selected_index]
+                debug_info.append(f"Selected fact: ID={fact.get('id')}, Statement={fact.get('statement', '')[:30]}...")
+                
+                # Ensure all values are strings to avoid UI errors
+                fact_id_str = str(fact.get("id", ""))
+                filename_str = str(fact.get("filename", ""))
+                statement_str = str(fact.get("statement", ""))
+                source_str = str(fact.get("original_text", ""))
+                status_str = str(fact.get("verification_status", "pending"))
+                reason_str = str(fact.get("verification_reason", ""))
+                
+                debug_info.append(f"Returning values:")
+                debug_info.append(f"  ID: {fact_id_str}")
+                debug_info.append(f"  Filename: {filename_str}")
+                debug_info.append(f"  Statement: {statement_str[:50]}...")
+                debug_info.append(f"  Source: {source_str[:50]}...")
+                debug_info.append(f"  Status: {status_str}")
+                debug_info.append(f"  Reason: {reason_str[:50]}...")
+                
+                return (
+                    fact_id_str,  # fact_id
+                    filename_str,  # filename
+                    statement_str,  # fact_statement
+                    source_str,  # fact_source
+                    status_str,  # fact_status
+                    reason_str,  # fact_reason
+                    "\n".join(debug_info)  # debug info
+                )
+            
+            fact_selector.change(
+                fn=on_fact_selected,
+                inputs=[fact_selector],
+                outputs=[fact_id, fact_filename, fact_statement, fact_source, fact_status, fact_reason, debug_display]
+            )
+            self.debug_print("Connected fact_selector.change event")
+
+            # Connect refresh button
+            def on_refresh_facts():
+                self.debug_print("on_refresh_facts called")
+                all_facts, choices = self.get_facts_for_review()
+                
+                # Debug information
+                debug_info = [
+                    f"Refreshed fact choices: {len(choices)} items",
+                    f"Number of facts: {len(all_facts)}",
+                ]
+                
+                # Add information about each choice
+                for i, choice in enumerate(choices):
+                    debug_info.append(f"Choice {i}: '{choice}'")
+                
+                return gr.update(choices=choices, value=None), "\n".join(debug_info)
+                
+            refresh_facts_btn.click(
+                fn=on_refresh_facts,
+                inputs=[],
+                outputs=[fact_selector, debug_display]
+            )
+            self.debug_print("Connected refresh_facts_btn.click event")
+
+            # Connect approve button
+            approve_btn.click(
+                fn=self.approve_fact,
+                inputs=[fact_id, fact_statement, fact_reason],
+                outputs=[review_status, facts_summary]
+            ).then(
+                fn=update_facts_display,
+                inputs=[chat_display, facts_summary],
+                outputs=[chat_display, facts_summary, all_submissions, approved_facts, rejected_facts, errors_display, fact_selector]
+            )
+
+            # Connect reject button
+            reject_btn.click(
+                fn=self.reject_fact,
+                inputs=[fact_id, fact_statement, fact_reason],
+                outputs=[review_status, facts_summary]
+            ).then(
+                fn=update_facts_display,
+                inputs=[chat_display, facts_summary],
+                outputs=[chat_display, facts_summary, all_submissions, approved_facts, rejected_facts, errors_display, fact_selector]
+            )
+
+            # Connect modify button
+            modify_btn.click(
+                fn=self.update_fact,
+                inputs=[fact_id, fact_statement, fact_status, fact_reason],
+                outputs=[review_status, facts_summary]
+            ).then(
+                fn=update_facts_display,
+                inputs=[chat_display, facts_summary],
+                outputs=[chat_display, facts_summary, all_submissions, approved_facts, rejected_facts, errors_display, fact_selector]
+            )
+            
+        self.debug_print("Finished building interface")
         return interface
 
 def create_app():
     """Create and configure the Gradio app."""
+    print("Creating Fact Extraction GUI application")
     gui = FactExtractionGUI()
     interface = gui.build_interface()
+    print("Interface built successfully")
     return interface
 
 if __name__ == "__main__":
@@ -565,6 +1053,7 @@ if __name__ == "__main__":
     # Try a range of ports if the default is in use
     for port in range(7860, 7870):
         try:
+            print(f"Attempting to launch on port {port}...")
             app.launch(
                 server_name="0.0.0.0",
                 server_port=port,
