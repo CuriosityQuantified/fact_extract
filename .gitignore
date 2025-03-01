@@ -1,21 +1,16 @@
-# Python
+# Ignore data files
+src/fact_extract/data/*
+!src/fact_extract/data/.gitkeep
+
+# Ignore accidental duplicate directories
+src/src/
+
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -23,33 +18,15 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
-env/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Test files
-test_data/
-.pytest_cache/
-.coverage
-htmlcov/
 
 # Environment variables
 .env
 
-# Logs
-*.log
+# Testing
+test_data/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Documentation
-site/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb 
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo

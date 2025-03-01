@@ -31,7 +31,7 @@ from fact_extract.models.state import (
 )
 from fact_extract.agents import FACT_EXTRACTOR_PROMPT, FACT_VERIFICATION_PROMPT
 from fact_extract.storage.chunk_repository import ChunkRepository
-from fact_extract.storage.fact_repository import FactRepository
+from fact_extract.storage.fact_repository import FactRepository, RejectedFactRepository
 from fact_extract.tools.submission import submit_fact
 
 import logging
@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # Initialize repositories and LLM as module-level variables
 chunk_repo = ChunkRepository()
 fact_repo = FactRepository()
+rejected_fact_repo = RejectedFactRepository()
 llm = ChatOpenAI(
     model="gpt-3.5-turbo",
     temperature=0  # Keep temperature at 0 for consistent outputs
@@ -529,22 +530,25 @@ async def validator_node(state: WorkflowStateDict) -> WorkflowStateDict:
                     fact["source_name"] = state.get("source_name", "")
                     fact["source_url"] = state.get("source_url", "")
                     
-                    # Store fact only if approved
+                    # Store fact based on validation status
                     if is_valid:
-                        print("Fact verified - storing in repository")
+                        print("Fact verified - storing in approved repository")
                         fact_repo.store_fact(fact)
                         # Track verified facts by chunk
                         if chunk_index not in chunk_verified_facts:
                             chunk_verified_facts[chunk_index] = []
                         chunk_verified_facts[chunk_index].append(fact)
                     else:
-                        print("Fact rejected - not storing")
+                        print("Fact rejected - storing in rejected repository")
+                        rejected_fact_repo.store_rejected_fact(fact)
                     
                 except (ValueError, AttributeError) as e:
                     print(f"\nError parsing validation response: {str(e)}")
                     fact["verification_status"] = "rejected"
                     fact["verification_reason"] = "Invalid validation response format"
                     state["errors"].append(f"Error parsing validation response: {str(e)}")
+                    # Store the rejected fact due to parsing error
+                    rejected_fact_repo.store_rejected_fact(fact)
                 
             except Exception as e:
                 error_msg = f"Error validating fact: {str(e)}"

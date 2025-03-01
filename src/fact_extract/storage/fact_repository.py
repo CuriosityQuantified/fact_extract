@@ -238,4 +238,213 @@ class FactRepository:
             del self.facts[document_name]
             
             # Save to Excel after each update
+            self._save_to_excel()
+
+
+class RejectedFactRepository:
+    """Repository for storing and managing rejected facts with Excel persistence."""
+    
+    def __init__(self, excel_path: str = "src/fact_extract/data/rejected_facts.xlsx"):
+        self.rejected_facts: Dict[str, List[Dict[str, Any]]] = {}
+        self.excel_path = excel_path
+        
+        # Create data directory if it doesn't exist
+        os.makedirs(os.path.dirname(self.excel_path), exist_ok=True)
+        
+        # Load existing rejected facts from Excel if file exists
+        self._load_from_excel()
+        
+    def _load_from_excel(self) -> None:
+        """Load rejected facts from Excel file if it exists."""
+        if os.path.exists(self.excel_path):
+            try:
+                df = pd.read_excel(self.excel_path)
+                
+                # Convert DataFrame to dictionary structure
+                for _, row in df.iterrows():
+                    document_name = row["document_name"]
+                    
+                    if document_name not in self.rejected_facts:
+                        self.rejected_facts[document_name] = []
+                    
+                    # Convert row to dictionary
+                    fact_data = row.to_dict()
+                    
+                    # Handle metadata columns
+                    metadata = {}
+                    for col in df.columns:
+                        if col.startswith("metadata_"):
+                            metadata_key = col[len("metadata_"):]
+                            metadata[metadata_key] = fact_data.pop(col, None)
+                    
+                    fact_data["metadata"] = metadata
+                    self.rejected_facts[document_name].append(fact_data)
+                    
+            except Exception as e:
+                print(f"Error loading rejected facts from Excel: {e}")
+    
+    def _save_to_excel(self) -> None:
+        """Save all rejected facts to Excel file."""
+        try:
+            # Flatten the nested dictionary structure
+            rows = []
+            for document_name, facts_list in self.rejected_facts.items():
+                for fact_data in facts_list:
+                    # Create a copy of the fact data
+                    row_data = fact_data.copy()
+                    
+                    # Extract metadata and flatten it with prefix
+                    if "metadata" in row_data and isinstance(row_data["metadata"], dict):
+                        metadata = row_data.pop("metadata", {})
+                        for key, value in metadata.items():
+                            row_data[f"metadata_{key}"] = value
+                    
+                    # Ensure all required columns are present
+                    row_data["date_uploaded"] = row_data.get("timestamp", datetime.now().isoformat())
+                    row_data["source_name"] = row_data.get("source_name", "")
+                    row_data["url"] = row_data.get("source_url", "")
+                    row_data["document_name"] = document_name
+                    row_data["fact"] = row_data.get("statement", "")
+                    row_data["chunk"] = row_data.get("original_text", "")
+                    row_data["chunk_id"] = row_data.get("source_chunk", "")
+                    row_data["rejection_reason"] = row_data.get("verification_reason", "")
+                    
+                    rows.append(row_data)
+            
+            # Create DataFrame and save to Excel
+            if rows:
+                df = pd.DataFrame(rows)
+                
+                # Ensure required columns are first in the DataFrame
+                required_columns = [
+                    "date_uploaded", "source_name", "url", "document_name", 
+                    "fact", "chunk", "chunk_id", "verification_status", "rejection_reason"
+                ]
+                
+                # Reorder columns to put required columns first
+                all_columns = list(df.columns)
+                for col in reversed(required_columns):
+                    if col in all_columns:
+                        all_columns.remove(col)
+                        all_columns.insert(0, col)
+                
+                df = df[all_columns]
+                df.to_excel(self.excel_path, index=False)
+        except Exception as e:
+            print(f"Error saving rejected facts to Excel: {e}")
+    
+    def _generate_fact_hash(self, fact_data: Dict[str, Any]) -> str:
+        """
+        Generate a hash for a fact to identify duplicates.
+        
+        Args:
+            fact_data: Dictionary containing fact information
+            
+        Returns:
+            str: Hash of the fact
+        """
+        # Use only the statement to create a unique hash
+        fact_text = fact_data.get("statement", "").strip()
+        
+        # Create a hash of the fact text to identify duplicates
+        hash_input = fact_text.encode('utf-8')
+        return hashlib.md5(hash_input).hexdigest()
+    
+    def is_duplicate_fact(self, fact_data: Dict[str, Any]) -> bool:
+        """
+        Check if a fact is a duplicate.
+        
+        Args:
+            fact_data: Dictionary containing fact information
+            
+        Returns:
+            bool: True if the fact is a duplicate
+        """
+        fact_hash = self._generate_fact_hash(fact_data)
+        
+        # Check all facts in all documents
+        for document_name, facts_list in self.rejected_facts.items():
+            for existing_fact in facts_list:
+                existing_hash = self._generate_fact_hash(existing_fact)
+                if existing_hash == fact_hash:
+                    return True
+        
+        return False
+        
+    def store_rejected_fact(self, fact_data: Dict[str, Any]) -> None:
+        """
+        Store a rejected fact with its metadata if it's not a duplicate.
+        
+        Args:
+            fact_data: Dictionary containing rejected fact information
+        """
+        document_name = fact_data["document_name"]
+        
+        # Check if this fact is a duplicate
+        if self.is_duplicate_fact(fact_data):
+            print(f"Duplicate rejected fact detected, not storing: {fact_data.get('statement', '')}")
+            return
+        
+        if document_name not in self.rejected_facts:
+            self.rejected_facts[document_name] = []
+            
+        # Add timestamp if not present
+        if "timestamp" not in fact_data:
+            fact_data["timestamp"] = datetime.now().isoformat()
+            
+        self.rejected_facts[document_name].append(fact_data)
+        
+        # Save to Excel after each update
+        self._save_to_excel()
+    
+    def get_rejected_facts(self, document_name: str) -> List[Dict[str, Any]]:
+        """
+        Get rejected facts for a document.
+        
+        Args:
+            document_name: Name of the document
+            
+        Returns:
+            List[Dict]: List of rejected facts
+        """
+        if document_name not in self.rejected_facts:
+            return []
+            
+        return self.rejected_facts[document_name]
+    
+    def get_all_rejected_facts(self) -> List[Dict[str, Any]]:
+        """
+        Get all rejected facts as a flat list.
+        
+        Returns:
+            List[Dict]: All rejected facts
+        """
+        all_rejected_facts = []
+        for document_name, facts_list in self.rejected_facts.items():
+            all_rejected_facts.extend(facts_list)
+        return all_rejected_facts
+    
+    def get_rejected_fact_count(self, document_name: str) -> int:
+        """
+        Get count of rejected facts for a document.
+        
+        Args:
+            document_name: Name of the document
+            
+        Returns:
+            int: Number of rejected facts
+        """
+        return len(self.get_rejected_facts(document_name))
+    
+    def clear_rejected_facts(self, document_name: str) -> None:
+        """
+        Clear all rejected facts for a document.
+        
+        Args:
+            document_name: Name of the document
+        """
+        if document_name in self.rejected_facts:
+            del self.rejected_facts[document_name]
+            
+            # Save to Excel after each update
             self._save_to_excel() 
