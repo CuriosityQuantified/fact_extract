@@ -16,6 +16,11 @@
 - Fixed fact extraction system to strictly require measurable data points, resulting in correct handling of SYNTHETIC_ARTICLE_5 (no facts extracted from text without specific metrics)
 - Updated metric requirements to allow one clear, measurable metric (instead of two) while maintaining high standards for context and specificity, successfully tested with SYNTHETIC_ARTICLE_6
 - When using RecursiveCharacterTextSplitter, always create proper Document objects with page_content attribute before passing to split_documents() or transform_documents() methods to avoid "'dict' object has no attribute 'page_content'" errors
+- When implementing duplicate detection for facts, use only the fact statement content for generating hash keys, not document names or other metadata, to avoid false positives when the same fact appears in different documents
+- For Excel-based storage of facts and chunks, use pandas to handle reading and writing operations, and ensure proper directory structure exists before attempting to access files
+- When tracking extraction status of chunks, use an `all_facts_extracted` boolean field to properly mark chunks that have had all their facts extracted, which enables more efficient document reprocessing
+- When testing fact extraction with multiple facts per chunk, create unique test documents with UUID to avoid conflicts with previous test runs
+- Initialize the `all_facts_extracted` field to False when storing new chunks to ensure proper tracking of extraction status
 
 ## LangGraph
 - The `interrupt` function import location has changed in recent versions of LangGraph. Try these import paths in order:
@@ -25,7 +30,109 @@
 
 # Scratchpad
 
-## Current Task: Fact Extraction System Enhancement [COMPLETED]
+## Current Task: Fact Extraction Tracking Enhancement [COMPLETED]
+Implementing proper tracking of fact extraction status for chunks.
+
+### Requirements [✓]
+1. Add `all_facts_extracted` field to chunks [✓]
+   - Initialize field to False when storing new chunks
+   - Update field to True when all facts have been extracted
+   - Use field to determine if a document needs reprocessing
+
+2. Update validator_node to mark chunks as having all facts extracted [✓]
+   - Modify validator_node to set all_facts_extracted to True after processing
+   - Ensure process_document checks this field when determining if a document needs reprocessing
+
+3. Test implementation with multiple facts per chunk [✓]
+   - Create test script to verify handling of multiple facts per chunk
+   - Test marking chunks as having all facts extracted
+   - Test reprocessing logic with the new field
+
+### Implementation Details
+1. Chunk Repository:
+   - Added `all_facts_extracted` field to chunk storage
+   - Updated `is_chunk_processed` method to check this field
+   - Added parameter to `update_chunk_status` method to update this field
+
+2. Validator Node:
+   - Updated to mark chunks as having all facts extracted after validation
+   - Ensured proper handling of chunks with multiple facts
+
+3. Process Document:
+   - Updated to check if all chunks for a document have had all facts extracted
+   - Added logic to skip documents that have been fully processed
+   - Added logic to only process chunks that still need fact extraction
+
+### Testing
+- Created and ran `test_multiple_facts_per_chunk_unique.py` to verify:
+  - Multiple facts from the same chunk are correctly stored
+  - Chunks are properly marked as having all facts extracted
+  - Reprocessing logic correctly identifies fully processed documents
+
+### Results
+- The implementation successfully:
+  - Tracks whether all facts have been extracted from each chunk
+  - Prevents unnecessary reprocessing of documents
+  - Handles multiple facts per chunk correctly
+  - Maintains the existing workflow structure
+
+## Previous Task: Excel Storage and Duplicate Detection Implementation [COMPLETED]
+Implementing Excel storage for chunks and facts, as well as duplicate detection for both documents and facts.
+
+### Requirements [✓]
+1. Implement Excel storage for chunks and facts [✓]
+   - Store chunks in `src/fact_extract/data/all_chunks.xlsx` with all metadata
+   - Store facts in `src/fact_extract/data/all_facts.xlsx` with required columns
+   - Load existing data on initialization
+   - Ensure proper directory structure
+
+2. Implement duplicate detection [✓]
+   - Prevent reprocessing of documents with the same content
+   - Prevent storing duplicate facts
+   - Generate MD5 hashes for efficient comparison
+   - Handle edge cases properly
+
+3. Update file paths and directory structure [✓]
+   - Move data storage to `src/fact_extract/data/`
+   - Update all references to data files
+   - Ensure backward compatibility
+   - Clean up old data directory
+
+### Implementation Details
+1. Excel Storage:
+   - Modified `ChunkRepository` and `FactRepository` classes to use pandas for Excel operations
+   - Added methods to load existing data on initialization
+   - Implemented proper column handling for all metadata
+   - Created consistent directory structure
+
+2. Duplicate Detection:
+   - Added document hash generation using MD5
+   - Implemented fact hash generation using only the statement content
+   - Added checks to prevent storing duplicates
+   - Added informative messages when duplicates are detected
+
+3. Directory Structure:
+   - Created `src/fact_extract/data/` directory for all data storage
+   - Updated all file paths in the codebase
+   - Ensured directories are created if they don't exist
+   - Removed old data directory after migration
+
+### Testing
+- Created and ran `test_excel_storage.py` to verify:
+  - Chunks are correctly stored in Excel with all metadata
+  - Facts are correctly stored in Excel with all required columns
+  - Duplicate detection works correctly for both documents and facts
+  - Different facts are properly stored while duplicates are rejected
+
+### Results
+- The implementation successfully:
+  - Stores all chunks in `src/fact_extract/data/all_chunks.xlsx` with all metadata as columns
+  - Stores all approved facts in `src/fact_extract/data/all_facts.xlsx` with required columns
+  - Prevents duplicate processing of documents
+  - Prevents storing duplicate facts
+  - Maintains the existing workflow structure
+
+## Previous Task: Fact Extraction System Enhancement [COMPLETED]
 Implementing requested modifications to the fact extraction system.
 
 ### Requirements [✓]

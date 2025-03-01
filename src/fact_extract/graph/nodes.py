@@ -9,6 +9,8 @@ from datetime import datetime
 from uuid import UUID
 import json
 import asyncio
+import os
+import hashlib
 
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolExecutor
@@ -17,6 +19,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
+from langchain_core.documents import Document
 
 from fact_extract.models.state import (
     WorkflowStateDict,
@@ -76,6 +79,20 @@ async def chunker_node(state: WorkflowStateDict) -> WorkflowStateDict:
         print(f"Input text length: {len(state['input_text'])} characters")
         print(f"First 200 chars: {state['input_text'][:200]}...")
         
+        # Generate a document hash for duplicate detection
+        document_hash = hashlib.md5(state['input_text'].encode()).hexdigest()
+        print(f"Document hash: {document_hash}")
+        
+        # Check if document has already been processed
+        existing_chunks = chunk_repo.get_all_chunks()
+        for chunk in existing_chunks:
+            if chunk.get("document_hash") == document_hash:
+                print(f"Document with hash {document_hash} has already been processed.")
+                print("Skipping processing and marking as complete.")
+                state["is_complete"] = True
+                state["chunks"] = []
+                return state
+        
         print("\nChunking Configuration:")
         print("-"*40)
         print("Chunk size: 750 words")
@@ -94,7 +111,6 @@ async def chunker_node(state: WorkflowStateDict) -> WorkflowStateDict:
         )
         
         # Create a proper Document object
-        from langchain_core.documents import Document
         initial_doc = Document(
             page_content=state["input_text"],
             metadata={
@@ -128,7 +144,8 @@ async def chunker_node(state: WorkflowStateDict) -> WorkflowStateDict:
                     "start_index": doc.metadata.get("start_index", 0),
                     "source": doc.metadata.get("source", ""),
                     "url": doc.metadata.get("url", ""),
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "document_hash": document_hash
                 }
             }
             
@@ -149,6 +166,8 @@ async def chunker_node(state: WorkflowStateDict) -> WorkflowStateDict:
                 "contains_facts": False,
                 "error_message": None,
                 "processing_time": None,
+                "document_hash": document_hash,
+                "all_facts_extracted": False,  # Initialize as false
                 "metadata": chunk_data["metadata"]
             })
             
@@ -200,20 +219,8 @@ async def chunker_node(state: WorkflowStateDict) -> WorkflowStateDict:
         state["memory"]["error_counts"]["chunking_error"] = state["memory"]["error_counts"].get("chunking_error", 0) + 1
         state["memory"]["performance_metrics"]["errors_encountered"] += 1
         
-        # Create single chunk with entire text
-        state["chunks"] = [{
-            "content": state["input_text"],
-            "index": 0,
-            "metadata": {
-                "error": str(e),
-                "word_count": len(state["input_text"].split()),
-                "char_length": len(state["input_text"]),
-                "timestamp": datetime.now().isoformat()
-            }
-        }]
-        state["current_chunk_index"] = 0
-        state["is_complete"] = False
-        
+        # Ensure state is marked as complete on error
+        state["is_complete"] = True
         return state
 
 
@@ -257,6 +264,12 @@ async def extractor_node(state: WorkflowStateDict) -> WorkflowStateDict:
         print("-"*40)
         print(f"Chunk Index: {current_chunk['index']}")
         print(f"Chunk Length: {len(current_chunk['content'])} chars")
+        
+        # Check if this chunk has already been processed but not all facts extracted
+        existing_chunk = chunk_repo.get_chunk(state["document_name"], current_chunk["index"])
+        if existing_chunk and existing_chunk.get("status") == "processed" and existing_chunk.get("contains_facts") and not existing_chunk.get("all_facts_extracted", False):
+            print(f"Chunk {current_chunk['index']} has been processed before but may have more facts to extract.")
+        
         print("\nChunk Content:")
         print("-"*40)
         print(current_chunk["content"])
@@ -505,6 +518,17 @@ async def validator_node(state: WorkflowStateDict) -> WorkflowStateDict:
                     fact["verification_status"] = "verified" if is_valid else "rejected"
                     fact["verification_reason"] = reasoning
                     
+                    # Ensure all required fields are present for Excel storage
+                    current_time = datetime.now().isoformat()
+                    
+                    # Add or update required fields
+                    if "timestamp" not in fact:
+                        fact["timestamp"] = current_time
+                    
+                    fact["date_uploaded"] = current_time
+                    fact["source_name"] = state.get("source_name", "")
+                    fact["source_url"] = state.get("source_url", "")
+                    
                     # Store fact only if approved
                     if is_valid:
                         print("Fact verified - storing in repository")
@@ -549,7 +573,8 @@ async def validator_node(state: WorkflowStateDict) -> WorkflowStateDict:
                 chunk_index=chunk_index,
                 status="processed",
                 contains_facts=len(verified_facts) > 0,
-                error_message=None
+                error_message=None,
+                all_facts_extracted=True  # Mark as having all facts extracted
             )
         
         # Mark state as complete
@@ -624,7 +649,7 @@ def create_workflow(
 
 async def process_document(file_path: str, state: ProcessingState) -> Dict[str, Any]:
     """
-    Mock process_document function for testing.
+    Process a document for fact extraction.
     
     Args:
         file_path: Path to the document to process
@@ -633,4 +658,118 @@ async def process_document(file_path: str, state: ProcessingState) -> Dict[str, 
     Returns:
         Dict with processing results
     """
-    return {"facts": ["test fact"]} 
+    import os
+    import hashlib
+    
+    # Create data directory if it doesn't exist
+    os.makedirs("src/fact_extract/data", exist_ok=True)
+    
+    # Check if file has already been processed
+    if file_path in state.processed_files:
+        print(f"File {file_path} has already been processed in this session.")
+        return {
+            "status": "skipped",
+            "reason": "already_processed_in_session",
+            "file_path": file_path
+        }
+    
+    # Read file content
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        error_msg = f"Error reading file {file_path}: {str(e)}"
+        state.add_error(file_path, error_msg)
+        return {
+            "status": "error",
+            "error": error_msg,
+            "file_path": file_path
+        }
+    
+    # Generate document hash for duplicate detection
+    document_hash = hashlib.md5(content.encode()).hexdigest()
+    
+    # Check if document has already been processed by checking chunks repository
+    from fact_extract.storage.chunk_repository import ChunkRepository
+    chunk_repo = ChunkRepository()
+    existing_chunks = chunk_repo.get_all_chunks()
+    
+    # Check if all chunks for this document have had all facts extracted
+    all_chunks_processed = True
+    chunks_to_process = []
+    
+    for chunk in existing_chunks:
+        if chunk.get("document_hash") == document_hash:
+            # Document exists, check if all facts have been extracted
+            if not chunk.get("all_facts_extracted", False):
+                all_chunks_processed = False
+                chunks_to_process.append(chunk)
+    
+    if all_chunks_processed and any(chunk.get("document_hash") == document_hash for chunk in existing_chunks):
+        print(f"Document with hash {document_hash} has already been fully processed.")
+        state.complete_file(file_path)
+        return {
+            "status": "skipped",
+            "reason": "already_processed_in_repository",
+            "file_path": file_path,
+            "document_hash": document_hash
+        }
+    
+    # If some chunks need further processing, we'll continue with those
+    if chunks_to_process:
+        print(f"Document with hash {document_hash} has {len(chunks_to_process)} chunks that need further processing.")
+    
+    # Start processing
+    state.start_processing(file_path)
+    
+    # Create initial state for workflow
+    document_name = os.path.basename(file_path)
+    workflow_state = create_initial_state(
+        input_text=content,
+        document_name=document_name,
+        source_url=""
+    )
+    
+    # Run workflow
+    try:
+        # Create workflow
+        workflow, input_key = create_workflow(chunk_repo, fact_repo)
+        
+        # Execute workflow
+        result = await workflow.ainvoke({input_key: content})
+        
+        # Extract facts from result
+        facts = []
+        for fact in result.get("extracted_facts", []):
+            if fact.get("verification_status") == "verified":
+                facts.append(fact)
+                state.add_fact(file_path, fact)
+        
+        # Mark all chunks as having all facts extracted
+        for chunk in result.get("chunks", []):
+            chunk_index = chunk.get("index")
+            chunk_repo.update_chunk_status(
+                document_name=document_name,
+                chunk_index=chunk_index,
+                status="processed",
+                all_facts_extracted=True
+            )
+        
+        # Mark file as processed
+        state.complete_file(file_path)
+        
+        return {
+            "status": "success",
+            "facts": facts,
+            "file_path": file_path,
+            "document_hash": document_hash
+        }
+        
+    except Exception as e:
+        error_msg = f"Error processing file {file_path}: {str(e)}"
+        state.add_error(file_path, error_msg)
+        return {
+            "status": "error",
+            "error": error_msg,
+            "file_path": file_path
+        } 

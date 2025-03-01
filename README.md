@@ -17,6 +17,8 @@ A robust document processing system that extracts content from various document 
 - Memory-efficient processing
 - Special character support (Unicode, CJK, emojis)
 - Auto-detection of document structure
+- Excel-based storage for chunks and facts
+- Duplicate detection for documents and facts
 
 ## Installation
 
@@ -60,6 +62,22 @@ async def process_documents():
         print("-" * 50)
 ```
 
+## Data Storage
+
+The system stores all processed chunks and extracted facts in Excel files:
+
+- **Chunks**: All document chunks are stored in `src/fact_extract/data/all_chunks.xlsx`
+- **Facts**: All verified facts are stored in `src/fact_extract/data/all_facts.xlsx`
+
+### Storage Features
+
+1. **Persistence**: All data is stored persistently across sessions
+2. **Metadata**: Complete metadata is preserved for analysis
+3. **Duplicate Detection**:
+   - Document-level: Prevents reprocessing the same document multiple times
+   - Fact-level: Prevents storing duplicate facts from the same or different documents
+4. **Structured Format**: Data is organized in a consistent, tabular format
+
 ## Edge Cases Handled
 
 1. Empty Files
@@ -86,6 +104,11 @@ async def process_documents():
    - Latin1 content
    - ASCII fallback
 
+6. Duplicate Content
+   - Same document uploaded multiple times
+   - Same facts appearing in different documents
+   - Similar facts with minor variations
+
 ## Testing
 
 Run the test suite:
@@ -96,6 +119,9 @@ python -m pytest
 
 # Run edge case tests
 python -m pytest src/fact_extract/tests/test_document_processors_edge_cases.py
+
+# Test Excel storage and duplicate detection
+python test_excel_storage.py
 ```
 
 ## License
@@ -127,6 +153,8 @@ python -m src.fact_extract.gui.app
 - **Real-time Processing**: Watch the extraction progress in real-time
 - **Interactive Results**: View extracted facts in a structured JSON format
 - **Error Handling**: Clear feedback for invalid files or processing errors
+- **Duplicate Detection**: Automatic detection and prevention of duplicate documents and facts
+- **Persistent Storage**: All processed chunks and facts are stored in Excel files
 
 ### Usage Tips
 
@@ -145,3 +173,4 @@ python -m src.fact_extract.gui.app
    - Extracted facts are displayed per document
    - Results can be copied or saved for further use
    - Processing history is maintained during the session
+   - All facts are stored persistently in Excel files
