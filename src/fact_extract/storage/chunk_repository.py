@@ -194,4 +194,18 @@ class ChunkRepository:
             del self.chunks[document_name]
             
             # Save to Excel after each update
-            self._save_to_excel() 
+            self._save_to_excel()
+            
+    def get_chunks_for_document(self, document_name: str) -> List[Dict[str, Any]]:
+        """
+        Get all chunks for a specific document.
+        
+        Args:
+            document_name: Name of the document
+            
+        Returns:
+            List[Dict]: All chunks for the document
+        """
+        if document_name in self.chunks:
+            return [chunk_data for chunk_index, chunk_data in self.chunks[document_name].items()]
+        return [] 

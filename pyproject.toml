@@ -28,4 +28,11 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["fact_extract*"] 
+include = ["fact_extract*"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/fact_extract/unit_tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function" 

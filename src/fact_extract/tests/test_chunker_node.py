@@ -1,8 +1,13 @@
+import pytest
 import asyncio
 import os
 import hashlib
 from datetime import datetime
 import uuid
+from pathlib import Path
+import sys
+import json
+from pprint import pprint
 
 from src.fact_extract.models.state import create_initial_state
 from src.fact_extract.graph.nodes import chunker_node
@@ -10,6 +15,7 @@ from src.fact_extract.utils.synthetic_data import SYNTHETIC_ARTICLE_7
 from src.fact_extract.storage.chunk_repository import ChunkRepository
 from src.fact_extract.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_chunker_node_direct():
     """Test the chunker node directly with SYNTHETIC_ARTICLE_7."""
     print("\n" + "="*80)
@@ -36,37 +42,38 @@ async def test_chunker_node_direct():
     )
     
     print(f"\nCreated workflow state with document name: {document_name}")
-    print(f"State keys: {list(state.keys())}")
+    print(f"Original text length: {len(state['input_text'])} characters")
     
     try:
-        # Execute chunker node directly
-        print("\nExecuting chunker node...")
+        # Process the state through the chunker node
+        print("\nExecuting chunker_node...")
         result = await chunker_node(state)
         
-        # Check the results
-        print("\nChunker node execution completed")
-        print(f"Is complete: {result.get('is_complete', False)}")
-        print(f"Errors: {result.get('errors', [])}")
-        print(f"Chunks created: {len(result.get('chunks', []))}")
-        
-        # Print chunk details
+        # Extract and print results
         chunks = result.get("chunks", [])
-        print(f"\nCreated {len(chunks)} chunks from SYNTHETIC_ARTICLE_7:")
+        print(f"\nChunked text into {len(chunks)} segments")
         
-        for idx, chunk in enumerate(chunks[:3]):  # Show first 3 chunks
-            print(f"\n--- Chunk {idx+1} ---")
-            print(f"Index: {chunk['index']}")
-            print(f"Word count: {chunk['metadata']['word_count']}")
-            print(f"First 100 chars: {chunk['content'][:100]}...")
+        # Print the first few chunks for verification
+        for i, chunk in enumerate(chunks[:3]):
+            print(f"\nChunk {i+1}:")
+            content = chunk.get("content", "")
+            print(f"Length: {len(content)} characters")
+            print(f"Preview: {content[:100]}...")
+            
+            # Print metadata
+            metadata = chunk.get("metadata", {})
+            if metadata:
+                print("Metadata:")
+                for key, value in metadata.items():
+                    print(f"  {key}: {value}")
         
         if len(chunks) > 3:
             print(f"\n... and {len(chunks) - 3} more chunks")
-    
+        
+        return chunks
     except Exception as e:
         print(f"\nError executing chunker node: {str(e)}")
-    
-    print("\nTEST COMPLETE")
-    print("="*80)
+        raise
 
 if __name__ == "__main__":
     # Initialize global variables for the chunker node

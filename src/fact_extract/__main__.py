@@ -201,7 +201,7 @@ async def main():
         repo = FactRepository()
         stored_facts = repo.get_facts(
             document_name="Sustainable Data Centers Article",
-            verification_status="verified"
+            verified_only=True
         )
         print(f"Facts stored in repository: {len(stored_facts)}")
             

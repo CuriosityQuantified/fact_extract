@@ -2,6 +2,17 @@
 src/fact_extract/data/*
 !src/fact_extract/data/.gitkeep
 
+# Ignore Excel files at root level
+/*.xlsx
+processed_chunks.xlsx
+unprocessed_chunks.xlsx
+facts.xlsx
+
+# Ignore log files
+*.log
+debug_output.log
+app_debug.log
+
 # Ignore accidental duplicate directories
 src/src/
 

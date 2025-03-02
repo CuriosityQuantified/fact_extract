@@ -14,6 +14,8 @@ class FactRepository:
     def __init__(self, excel_path: str = "src/fact_extract/data/all_facts.xlsx"):
         self.facts: Dict[str, List[Dict[str, Any]]] = {}
         self.excel_path = excel_path
+        # Valid status values
+        self.valid_statuses = ["verified", "rejected", "pending"]
         
         # Create data directory if it doesn't exist
         os.makedirs(os.path.dirname(self.excel_path), exist_ok=True)
@@ -66,14 +68,33 @@ class FactRepository:
                         for key, value in metadata.items():
                             row_data[f"metadata_{key}"] = value
                     
+                    # Preserve the original statement
+                    original_statement = row_data.get("statement", "")
+                    
                     # Ensure all required columns are present
                     row_data["date_uploaded"] = row_data.get("timestamp", datetime.now().isoformat())
                     row_data["source_name"] = row_data.get("source_name", "")
                     row_data["url"] = row_data.get("source_url", "")
                     row_data["document_name"] = document_name
-                    row_data["fact"] = row_data.get("statement", "")
+                    
+                    # Use the statement field directly instead of creating a new "fact" field
+                    if "statement" in row_data:
+                        row_data["fact"] = row_data["statement"]
+                    else:
+                        row_data["fact"] = ""
+                        row_data["statement"] = ""
+                    
                     row_data["chunk"] = row_data.get("original_text", "")
                     row_data["chunk_id"] = row_data.get("source_chunk", "")
+                    
+                    # Debug print to check statement
+                    if original_statement != row_data.get("statement", ""):
+                        print(f"WARNING: Statement changed during Excel preparation!")
+                        print(f"  Original: {original_statement[:40]}...")
+                        print(f"  Row data: {row_data.get('statement', '')[:40]}...")
+                        # Fix the statement if it was changed
+                        row_data["statement"] = original_statement
+                        row_data["fact"] = original_statement
                     
                     rows.append(row_data)
             
@@ -84,7 +105,7 @@ class FactRepository:
                 # Ensure required columns are first in the DataFrame
                 required_columns = [
                     "date_uploaded", "source_name", "url", "document_name", 
-                    "fact", "chunk", "chunk_id", "verification_status"
+                    "fact", "statement", "chunk", "chunk_id", "verification_status"
                 ]
                 
                 # Reorder columns to put required columns first
@@ -95,7 +116,17 @@ class FactRepository:
                         all_columns.insert(0, col)
                 
                 df = df[all_columns]
+                
+                # Debug print to check statement in DataFrame
+                if "statement" in df.columns:
+                    for i, row in df.iterrows():
+                        if i < 5:  # Only print first 5 rows to avoid flooding logs
+                            print(f"DEBUG: DataFrame row {i} statement: {row.get('statement', '')[:40]}...")
+                
                 df.to_excel(self.excel_path, index=False)
+                
+                # After saving, reload the facts to ensure they're stored correctly
+                self._reload_facts_from_excel()
         except Exception as e:
             print(f"Error saving facts to Excel: {e}")
     
@@ -137,14 +168,52 @@ class FactRepository:
         
         return False
         
-    def store_fact(self, fact_data: Dict[str, Any]) -> None:
+    def store_fact(self, fact_data_or_statement, document_name=None, chunk_index=None, 
+                   verification_status=None, verification_reasoning=None, timestamp=None, edited=None) -> None:
         """
         Store a fact with its metadata if it's not a duplicate.
         
         Args:
-            fact_data: Dictionary containing fact information
+            fact_data_or_statement: Either a dictionary containing all fact information or the fact statement string
+            document_name: Name of the document (required if first arg is a statement)
+            chunk_index: Index of the chunk (required if first arg is a statement)
+            verification_status: Status of verification (optional if first arg is a statement)
+            verification_reasoning: Reasoning for verification (optional if first arg is a statement)
+            timestamp: Timestamp of fact creation (optional)
+            edited: Whether the fact has been edited (optional)
         """
+        # Check if the first argument is a dictionary or a statement string
+        if isinstance(fact_data_or_statement, dict):
+            fact_data = fact_data_or_statement.copy()  # Make a copy to avoid modifying the original
+            print(f"DEBUG: Storing fact with statement: {fact_data.get('statement', '')[:40]}...")
+        else:
+            # Create a fact dictionary from individual parameters
+            fact_data = {
+                "statement": fact_data_or_statement,
+                "document_name": document_name,
+                "chunk_index": chunk_index,
+                "verification_status": verification_status or "pending",
+                "verification_reasoning": verification_reasoning or ""
+            }
+            print(f"DEBUG: Created fact with statement: {fact_data.get('statement', '')[:40]}...")
+            
+            # Add optional parameters if provided
+            if timestamp:
+                fact_data["timestamp"] = timestamp
+            if edited is not None:
+                fact_data["edited"] = edited
+            
         document_name = fact_data["document_name"]
+        
+        # Validate the verification status
+        if "verification_status" in fact_data:
+            status = fact_data["verification_status"]
+            if status not in self.valid_statuses:
+                print(f"Warning: Invalid verification status '{status}'. Setting to 'pending'.")
+                fact_data["verification_status"] = "pending"
+        else:
+            # Default to pending if not provided
+            fact_data["verification_status"] = "pending"
         
         # Check if this fact is a duplicate
         if self.is_duplicate_fact(fact_data):
@@ -158,7 +227,20 @@ class FactRepository:
         if "timestamp" not in fact_data:
             fact_data["timestamp"] = datetime.now().isoformat()
             
+        # Ensure the statement is preserved
+        original_statement = fact_data.get("statement", "")
+        
+        # Add the fact to the repository
         self.facts[document_name].append(fact_data)
+        
+        # Verify the statement wasn't changed
+        stored_fact = self.facts[document_name][-1]
+        if stored_fact.get("statement", "") != original_statement:
+            print(f"WARNING: Statement changed during storage!")
+            print(f"  Original: {original_statement[:40]}...")
+            print(f"  Stored: {stored_fact.get('statement', '')[:40]}...")
+            # Fix the statement if it was changed
+            stored_fact["statement"] = original_statement
         
         # Save to Excel after each update
         self._save_to_excel()
@@ -227,6 +309,23 @@ class FactRepository:
         """
         return len(self.get_facts(document_name, verified_only))
     
+    def get_facts_for_document(
+        self,
+        document_name: str,
+        verified_only: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Get facts for a document. Alias for get_facts for backward compatibility.
+        
+        Args:
+            document_name: Name of the document
+            verified_only: Only return verified facts
+            
+        Returns:
+            List[Dict]: List of facts
+        """
+        return self.get_facts(document_name, verified_only)
+    
     def clear_facts(self, document_name: str) -> None:
         """
         Clear all facts for a document.
@@ -239,6 +338,52 @@ class FactRepository:
             
             # Save to Excel after each update
             self._save_to_excel()
+    
+    def _reload_facts_from_excel(self) -> None:
+        """Reload facts from Excel file to ensure they're stored correctly."""
+        if os.path.exists(self.excel_path):
+            try:
+                # Create a backup of the current facts
+                facts_backup = self.facts.copy()
+                
+                # Clear current facts
+                self.facts = {}
+                
+                # Load facts from Excel
+                df = pd.read_excel(self.excel_path)
+                
+                # Convert DataFrame to dictionary structure
+                for _, row in df.iterrows():
+                    document_name = row["document_name"]
+                    
+                    if document_name not in self.facts:
+                        self.facts[document_name] = []
+                    
+                    # Convert row to dictionary
+                    fact_data = row.to_dict()
+                    
+                    # Handle metadata columns
+                    metadata = {}
+                    for col in df.columns:
+                        if col.startswith("metadata_"):
+                            metadata_key = col[len("metadata_"):]
+                            metadata[metadata_key] = fact_data.pop(col, None)
+                    
+                    fact_data["metadata"] = metadata
+                    
+                    # Ensure statement field is set from fact field if needed
+                    if "fact" in fact_data and ("statement" not in fact_data or pd.isna(fact_data["statement"])):
+                        fact_data["statement"] = fact_data["fact"]
+                    
+                    # Debug print to check statement
+                    print(f"DEBUG: Reloaded fact with statement: {fact_data.get('statement', '')[:40]}...")
+                    
+                    self.facts[document_name].append(fact_data)
+                    
+            except Exception as e:
+                print(f"Error reloading facts from Excel: {e}")
+                # Restore backup if loading fails
+                self.facts = facts_backup
 
 
 class RejectedFactRepository:
@@ -247,6 +392,8 @@ class RejectedFactRepository:
     def __init__(self, excel_path: str = "src/fact_extract/data/rejected_facts.xlsx"):
         self.rejected_facts: Dict[str, List[Dict[str, Any]]] = {}
         self.excel_path = excel_path
+        # Valid status values
+        self.valid_statuses = ["verified", "rejected", "pending"]
         
         # Create data directory if it doesn't exist
         os.makedirs(os.path.dirname(self.excel_path), exist_ok=True)
@@ -380,6 +527,16 @@ class RejectedFactRepository:
         """
         document_name = fact_data["document_name"]
         
+        # Validate the verification status
+        if "verification_status" in fact_data:
+            status = fact_data["verification_status"]
+            if status not in self.valid_statuses:
+                print(f"Warning: Invalid verification status '{status}'. Setting to 'rejected'.")
+                fact_data["verification_status"] = "rejected"
+        else:
+            # Default to rejected if not provided
+            fact_data["verification_status"] = "rejected"
+            
         # Check if this fact is a duplicate
         if self.is_duplicate_fact(fact_data):
             print(f"Duplicate rejected fact detected, not storing: {fact_data.get('statement', '')}")
@@ -397,7 +554,10 @@ class RejectedFactRepository:
         # Save to Excel after each update
         self._save_to_excel()
     
-    def get_rejected_facts(self, document_name: str) -> List[Dict[str, Any]]:
+    def get_rejected_facts(
+        self,
+        document_name: str
+    ) -> List[Dict[str, Any]]:
         """
         Get rejected facts for a document.
         
@@ -411,6 +571,21 @@ class RejectedFactRepository:
             return []
             
         return self.rejected_facts[document_name]
+    
+    def get_rejected_facts_for_document(
+        self,
+        document_name: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Get rejected facts for a document. Alias for get_rejected_facts for backward compatibility.
+        
+        Args:
+            document_name: Name of the document
+            
+        Returns:
+            List[Dict]: List of rejected facts
+        """
+        return self.get_rejected_facts(document_name)
     
     def get_all_rejected_facts(self) -> List[Dict[str, Any]]:
         """

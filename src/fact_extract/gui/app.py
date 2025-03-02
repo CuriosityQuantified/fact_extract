@@ -21,6 +21,8 @@ from datetime import datetime
 from pypdf import PdfReader
 from docx import Document
 import csv
+import pandas as pd
+import json
 
 from ..models.state import ProcessingState, create_initial_state
 from ..utils.file_utils import (
@@ -34,11 +36,6 @@ from ..utils.file_utils import (
 from ..graph.nodes import create_workflow
 from ..storage.chunk_repository import ChunkRepository
 from ..storage.fact_repository import FactRepository, RejectedFactRepository
-
-# Initialize repositories
-chunk_repo = ChunkRepository()
-fact_repo = FactRepository()
-rejected_fact_repo = RejectedFactRepository()
 
 def format_file_types() -> str:
     """Format allowed file types for display."""
@@ -70,8 +67,13 @@ class FactExtractionGUI:
         self.temp_files = []
         self.chat_history = []
         
+        # Initialize repositories
+        self.chunk_repo = ChunkRepository()
+        self.fact_repo = FactRepository()
+        self.rejected_fact_repo = RejectedFactRepository()
+        
         # Create workflow
-        self.workflow, self.input_key = create_workflow(chunk_repo, fact_repo)
+        self.workflow, self.input_key = create_workflow(self.chunk_repo, self.fact_repo)
         
         # Store facts data for UI updates
         self.facts_data = {}
@@ -81,10 +83,14 @@ class FactExtractionGUI:
         print("DEBUG_INIT: FactExtractionGUI initialized")
 
     def debug_print(self, message):
-        """Print debug message to stderr for visibility."""
-        if self.debug:
-            print(f"DEBUG: {message}", file=sys.stderr, flush=True)
-            print(f"DEBUG: {message}")  # Also to stdout for redundancy
+        """Print a debug message and also log it to a file."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"DEBUG [{timestamp}]: {message}"
+        print(log_message)
+        
+        # Also log to a file
+        with open("app_debug.log", "a") as f:
+            f.write(log_message + "\n")
 
     def format_facts_summary(self, facts: Dict) -> str:
         """Format summary of extracted facts."""
@@ -419,18 +425,17 @@ class FactExtractionGUI:
         all_facts = []
         fact_choices = []
         
-        # Extract all facts from fact_data
+        # First add facts from in-memory data
         for filename, file_facts in self.facts_data.items():
             self.debug_print(f"Processing file: {filename}")
             if file_facts.get("all_facts"):
-                self.debug_print(f"  File has {len(file_facts['all_facts'])} facts")
                 for i, fact in enumerate(file_facts["all_facts"]):
+                    self.debug_print(f"  Processing fact {i} with status: {fact.get('verification_status', 'pending')}")
+                    
                     # Add unique ID to fact if not present
-                    if "id" not in fact:
-                        fact["id"] = id(fact)  # Use object id as unique identifier
+                    if "id" not in fact or fact["id"] is None:
+                        fact["id"] = i + 1  # Use sequential ID starting from 1
                         self.debug_print(f"  Assigned new ID {fact['id']} to fact {i}")
-                    else:
-                        self.debug_print(f"  Fact {i} already has ID {fact['id']}")
                     
                     # Add filename to fact for reference
                     fact["filename"] = filename
@@ -438,19 +443,90 @@ class FactExtractionGUI:
                     # Add to all_facts list
                     all_facts.append(fact)
                     
-                    # Format choice as "status | first 40 chars of statement"
-                    status_emoji = "✅" if fact.get("verification_status") == "verified" else "❌" if fact.get("verification_status") == "rejected" else "⏳"
-                    preview = fact["statement"][:40] + "..." if len(fact["statement"]) > 40 else fact["statement"]
-                    choice_text = f"{status_emoji} {preview}"
+                    # Format choice
+                    statement = fact.get("statement", "")
+                    if not isinstance(statement, str):
+                        statement = str(statement) if statement is not None else ""
+                    preview = statement[:40] + "..." if len(statement) > 40 else statement
+                    status_icon = "✅" if fact.get("verification_status") == "verified" else "❌" if fact.get("verification_status") == "rejected" else "⏳"
+                    choice_text = f"{status_icon} {preview} (Current Session)"
                     fact_choices.append(choice_text)
                     self.debug_print(f"  Added choice: '{choice_text}'")
-            else:
-                self.debug_print(f"  File has no facts")
+        
+        # Create sets to track statements we've already included
+        included_statements = {(f.get('statement', ''), f.get('document_name', '')) for f in all_facts}
+        
+        # Add approved facts from repository
+        repo_approved_facts = self.fact_repo.get_all_facts(verified_only=True)
+        self.debug_print(f"Got {len(repo_approved_facts)} approved facts from repository")
+        
+        for i, fact in enumerate(repo_approved_facts):
+            # Skip if we've already included this fact from in-memory data
+            statement_key = (fact.get('statement', ''), fact.get('document_name', ''))
+            if statement_key in included_statements:
+                self.debug_print(f"  Skipping approved repo fact {i} as it's already in memory")
+                continue
+                
+            # Add unique ID to fact if not present
+            if "id" not in fact or fact["id"] is None:
+                fact["id"] = len(all_facts) + i + 1  # Use sequential ID continuing from in-memory facts
+                self.debug_print(f"  Assigned new ID {fact['id']} to approved repo fact {i}")
+                
+            # Add filename to fact for reference
+            fact["filename"] = fact.get("document_name", "Unknown Document")
+            
+            # Add to all_facts list
+            all_facts.append(fact)
+            included_statements.add(statement_key)
+            
+            # Format choice
+            statement = fact.get("statement", "")
+            if not isinstance(statement, str):
+                statement = str(statement) if statement is not None else ""
+            preview = statement[:40] + "..." if len(statement) > 40 else statement
+            choice_text = f"✅ {preview} (Repository)"
+            fact_choices.append(choice_text)
+            self.debug_print(f"  Added choice: '{choice_text}'")
+        
+        # Add rejected facts from repository
+        repo_rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
+        self.debug_print(f"Got {len(repo_rejected_facts)} rejected facts from repository")
+        
+        for i, fact in enumerate(repo_rejected_facts):
+            # Skip if we've already included this fact from in-memory data or approved repo
+            statement_key = (fact.get('statement', ''), fact.get('document_name', ''))
+            if statement_key in included_statements:
+                self.debug_print(f"  Skipping rejected repo fact {i} as it's already included")
+                continue
+                
+            # Add unique ID to fact if not present
+            if "id" not in fact or fact["id"] is None:
+                fact["id"] = len(all_facts) + i + 1  # Use sequential ID continuing from previous facts
+                self.debug_print(f"  Assigned new ID {fact['id']} to rejected repo fact {i}")
+                
+            # Add filename to fact for reference
+            fact["filename"] = fact.get("document_name", "Unknown Document")
+            
+            # Add to all_facts list
+            all_facts.append(fact)
+            included_statements.add(statement_key)
+            
+            # Format choice
+            statement = fact.get("statement", "")
+            if not isinstance(statement, str):
+                statement = str(statement) if statement is not None else ""
+            preview = statement[:40] + "..." if len(statement) > 40 else statement
+            choice_text = f"❌ {preview} (Repository)"
+            fact_choices.append(choice_text)
+            self.debug_print(f"  Added choice: '{choice_text}'")
         
         # Debug information
-        self.debug_print(f"Found {len(all_facts)} facts for review")
+        self.debug_print(f"Found {len(all_facts)} total facts for review")
         for i, fact in enumerate(all_facts):
-            self.debug_print(f"Fact {i}: ID={fact.get('id')}, Statement={fact.get('statement', '')[:30]}...")
+            statement = fact.get('statement', '')
+            if not isinstance(statement, str):
+                statement = str(statement) if statement is not None else ""
+            self.debug_print(f"Fact {i}: ID={fact.get('id')}, Statement={statement[:30]}...")
         
         self.debug_print(f"Returning {len(fact_choices)} choices for dropdown")
         for i, choice in enumerate(fact_choices):
@@ -500,6 +576,13 @@ class FactExtractionGUI:
         self.debug_print(f"Fact source: {fact.get('original_text', '')[:50]}...")
         self.debug_print(f"Fact status: {fact.get('verification_status', 'pending')}")
         
+        # Check if this is a repository fact (indicated by choice text)
+        is_repo_fact = False
+        if fact_index < len(fact_choices):
+            choice_text = fact_choices[fact_index]
+            is_repo_fact = "(Repository)" in choice_text
+            self.debug_print(f"Fact is from repository: {is_repo_fact}")
+        
         # Ensure all values are strings to avoid UI errors
         fact_id_str = str(fact.get("id", ""))
         filename_str = str(fact.get("filename", ""))
@@ -507,6 +590,11 @@ class FactExtractionGUI:
         source_str = str(fact.get("original_text", ""))
         status_str = str(fact.get("verification_status", "pending"))
         reason_str = str(fact.get("verification_reason", ""))
+        
+        # Add repository indicator to filename if from repository
+        if is_repo_fact and not filename_str.endswith(" (Repository)"):
+            filename_str = f"{filename_str} (Repository)"
+            self.debug_print(f"Added repository indicator to filename: {filename_str}")
         
         self.debug_print(f"Returning values:")
         self.debug_print(f"  ID: {fact_id_str}")
@@ -528,128 +616,433 @@ class FactExtractionGUI:
     def update_fact(self, fact_id, statement, status, reason):
         """Update a fact with new information."""
         self.debug_print(f"update_fact called with ID: {fact_id}")
-        self.debug_print(f"  Statement: {statement[:50]}...")
-        self.debug_print(f"  Status: {status}")
-        self.debug_print(f"  Reason: {reason[:50]}...")
-        
+        self.debug_print(f"  Statement: {statement[:40]}...")
+        self.debug_print(f"  Status: '{status}' (type: {type(status).__name__})")
+        self.debug_print(f"  Reason: {reason[:40]}...")
+
+        # Validate inputs
+        if not statement or not statement.strip():
+            return "Error: Statement cannot be empty", None
+
+        # Validate status
+        if status not in ["verified", "rejected", "pending"]:
+            return "Invalid status. Must be 'verified', 'rejected', or 'pending'.", None
+
         if not fact_id:
-            self.debug_print("No fact selected, returning error")
-            return "No fact selected", self.facts_data
-        
+            return "No fact ID provided.", None
+
         try:
-            # Convert fact_id back to integer (it comes as string from the UI)
-            try:
-                fact_id_int = int(fact_id)
-                self.debug_print(f"Converted fact_id to integer: {fact_id_int}")
-            except ValueError:
-                self.debug_print(f"Could not convert fact_id to integer: {fact_id}")
-                return f"Error: Invalid fact ID format: {fact_id}", self.facts_data
+            # Convert fact_id to integer if it's a string
+            if isinstance(fact_id, str):
+                fact_id = int(fact_id)
+                self.debug_print(f"Converted fact_id to integer: {fact_id}")
+        except ValueError:
+            return f"Invalid fact ID: {fact_id}", None
+
+        # Get all facts for review (includes in-memory and repository facts)
+        all_facts, _ = self.get_facts_for_review()
+
+        found_fact = None
+        document_name = None
+
+        # Find the fact with the matching ID
+        for fact in all_facts:
+            if "id" in fact and fact["id"] == fact_id:
+                found_fact = fact
+                self.debug_print(f"Found matching fact with ID {fact_id}")
+                break
+
+        if not found_fact:
+            self.debug_print(f"No fact found with ID: {fact_id}")
+            return f"Fact with ID {fact_id} not found.", None
+
+        document_name = found_fact.get("document_name", "")
+        
+        # Check if this is an in-memory fact or from a repository
+        is_repo_fact = "id" in found_fact and isinstance(found_fact["id"], (float, type(None)))
+        self.debug_print(f"Fact is from repository: {is_repo_fact}")
+
+        # Update the fact properties
+        old_status = found_fact.get("verification_status", "pending")
+        old_reason = found_fact.get("verification_reason", "")
+        old_statement = found_fact.get("statement", "")
+
+        # Make a copy to avoid modifying the original
+        updated_fact = found_fact.copy()
+        
+        self.debug_print("Updated fact:")
+        self.debug_print(f"  Statement: {old_statement[:40]}... -> {statement[:40]}...")
+        self.debug_print(f"  Status: {old_status} -> {status}")
+        self.debug_print(f"  Reason: {old_reason[:40]}... -> {reason[:40]}...")
+        
+        # Update all properties of the fact
+        updated_fact["statement"] = statement
+        updated_fact["fact"] = statement  # Also update the 'fact' field if it exists
+        updated_fact["verification_status"] = status
+        updated_fact["verification_reason"] = reason
+        updated_fact["verification_reasoning"] = reason  # Ensure both fields are updated
+        updated_fact["reviewed_date"] = datetime.now().isoformat()
+        updated_fact["edited"] = True
+
+        # Remove the fact from repositories to prevent duplicates
+        self.debug_print("Removing fact from repositories to prevent duplicates")
+        
+        # Create a temporary fact to use for hash generation
+        temp_fact = {
+            "statement": old_statement,  # Use the old statement to find the existing fact
+            "document_name": document_name,
+        }
+        
+        # Clear facts with the same statement from both repositories
+        self._remove_matching_facts_from_repositories(temp_fact)
+        
+        # Store the updated fact in the appropriate repository based on status
+        if status == "verified":
+            self.debug_print("Storing verified fact in fact repository")
+            # Ensure the statement is set correctly before storing
+            self.debug_print(f"Statement before storing: {updated_fact['statement'][:40]}...")
             
-            # Find and update the fact in self.facts_data
-            found = False
-            for filename, file_facts in self.facts_data.items():
-                self.debug_print(f"Searching in file: {filename}")
-                if file_facts.get("all_facts"):
-                    for i, fact in enumerate(file_facts["all_facts"]):
-                        self.debug_print(f"  Checking fact {i} with ID: {fact.get('id')}")
-                        if fact.get("id") == fact_id_int:
-                            self.debug_print(f"  Found matching fact at index {i}")
-                            found = True
-                            
-                            # Store original values for debugging
-                            old_statement = fact.get("statement", "")
-                            old_status = fact.get("verification_status", "pending")
-                            old_reason = fact.get("verification_reason", "")
-                            
-                            # Update fact properties
-                            fact["statement"] = statement
-                            fact["verification_status"] = status
-                            fact["verification_reason"] = reason
-                            fact["human_reviewed"] = True
-                            fact["review_timestamp"] = datetime.now().isoformat()
-                            
-                            self.debug_print(f"  Updated fact:")
-                            self.debug_print(f"    Statement: {old_statement[:30]}... -> {statement[:30]}...")
-                            self.debug_print(f"    Status: {old_status} -> {status}")
-                            self.debug_print(f"    Reason: {old_reason[:30]}... -> {reason[:30]}...")
-                            
-                            # Update verified_facts list if applicable
-                            if status == "verified":
-                                # Remove from verified if already there (to avoid duplicates)
-                                verified_before = len(file_facts.get("verified_facts", []))
-                                file_facts["verified_facts"] = [f for f in file_facts.get("verified_facts", []) 
-                                                               if f.get("id") != fact_id_int]
-                                verified_after = len(file_facts["verified_facts"])
-                                
-                                self.debug_print(f"  Removed from verified_facts: {verified_before - verified_after} instances")
-                                
-                                # Add updated fact to verified list
-                                file_facts["verified_facts"].append(fact)
-                                self.debug_print(f"  Added to verified_facts, new count: {len(file_facts['verified_facts'])}")
-                            else:
-                                # Remove from verified if rejected or pending
-                                verified_before = len(file_facts.get("verified_facts", []))
-                                file_facts["verified_facts"] = [f for f in file_facts.get("verified_facts", []) 
-                                                               if f.get("id") != fact_id_int]
-                                verified_after = len(file_facts["verified_facts"])
-                                
-                                self.debug_print(f"  Removed from verified_facts: {verified_before - verified_after} instances")
-                            
-                            # Update counts
-                            old_verified_count = file_facts.get("verified_count", 0)
-                            verified_count = len([f for f in file_facts["all_facts"] 
-                                                 if f.get("verification_status") == "verified"])
-                            file_facts["verified_count"] = verified_count
-                            
-                            self.debug_print(f"  Updated verified count: {old_verified_count} -> {verified_count}")
-                            
-                            # Update fact choices for dropdown
-                            _, fact_choices = self.get_facts_for_review()
-                            self.debug_print(f"  Updated fact choices, now have {len(fact_choices)} choices")
-                            
-                            return f"Fact updated: {statement[:40]}...", self.facts_data
+            # Create a new fact dictionary with the updated statement to ensure it's preserved
+            fact_to_store = {
+                "statement": statement,  # Explicitly set the statement
+                "document_name": document_name,
+                "verification_status": status,
+                "verification_reason": reason,
+                "verification_reasoning": reason,
+                "reviewed_date": updated_fact["reviewed_date"],
+                "edited": True
+            }
             
-            if not found:
-                self.debug_print(f"Fact with ID {fact_id_int} not found in any file")
-                return f"Fact not found with ID: {fact_id}", self.facts_data
-                
-        except Exception as e:
-            import traceback
-            self.debug_print(f"Error updating fact: {str(e)}")
-            self.debug_print(f"Traceback: {traceback.format_exc()}")
-            return f"Error updating fact: {str(e)}", self.facts_data
+            # Copy any other fields from the original fact
+            for key, value in updated_fact.items():
+                if key not in fact_to_store:
+                    fact_to_store[key] = value
+            
+            self.fact_repo.store_fact(fact_to_store)
+        elif status == "rejected":
+            self.debug_print("Storing rejected fact in rejected fact repository")
+            # Ensure the statement is set correctly before storing
+            self.debug_print(f"Statement before storing: {updated_fact['statement'][:40]}...")
+            
+            # Create a new fact dictionary with the updated statement to ensure it's preserved
+            fact_to_store = {
+                "statement": statement,  # Explicitly set the statement
+                "document_name": document_name,
+                "verification_status": status,
+                "verification_reason": reason,
+                "verification_reasoning": reason,
+                "reviewed_date": updated_fact["reviewed_date"],
+                "edited": True
+            }
+            
+            # Copy any other fields from the original fact
+            for key, value in updated_fact.items():
+                if key not in fact_to_store:
+                    fact_to_store[key] = value
+                    
+            self.rejected_fact_repo.store_rejected_fact(fact_to_store)
+        else:
+            self.debug_print("Not storing pending fact in any repository")
+
+        # Update the fact in the in-memory data structure if it exists there
+        if document_name in self.facts_data:
+            # Update all_facts
+            found_in_memory = False
+            for i, fact in enumerate(self.facts_data[document_name]["all_facts"]):
+                if "id" in fact and fact["id"] == fact_id:
+                    self.debug_print(f"Updating in-memory fact at index {i}")
+                    self.facts_data[document_name]["all_facts"][i] = updated_fact
+                    found_in_memory = True
+                    break
+            
+            # Update verified_facts
+            verified_facts = self.facts_data[document_name]["verified_facts"]
+            # First remove from verified_facts if it exists
+            removed_count = 0
+            for i in range(len(verified_facts) - 1, -1, -1):
+                if "id" in verified_facts[i] and verified_facts[i]["id"] == fact_id:
+                    verified_facts.pop(i)
+                    removed_count += 1
+            
+            self.debug_print(f"  Removed from verified_facts: {removed_count} instances")
+            
+            # Add back to verified_facts if status is "verified"
+            if status == "verified":
+                verified_facts.append(updated_fact)
+                self.debug_print(f"  Added to verified_facts, new count: {len(verified_facts)}")
+            
+            # Update verified count
+            self.facts_data[document_name]["verified_count"] = len(verified_facts)
+            self.debug_print(f"  Updated verified count: {self.facts_data[document_name]['verified_count']}")
+        else:
+            self.debug_print(f"Document {document_name} not found in facts_data")
+
+        # Update fact choices for dropdowns
+        _, facts_summary = self.get_facts_for_review()
+        self.debug_print(f"Updated fact choices, now have {len(facts_summary)} choices")
+
+        return f"Fact updated: {statement[:40]}...", facts_summary
+
+    def _remove_matching_facts_from_repositories(self, fact):
+        """Remove all facts with the same statement from both fact repositories."""
+        # Use the instance repository references
+        statement = fact.get("statement", "")
+        document_name = fact.get("document_name", "")
+        
+        self.debug_print(f"Removing facts with statement: {statement[:40]}... from document: {document_name}")
+        
+        # Remove from main fact repository if it exists
+        if document_name in self.fact_repo.facts:
+            facts = self.fact_repo.facts[document_name]
+            removed_count = 0
+            for i in range(len(facts) - 1, -1, -1):
+                if facts[i].get("statement", "") == statement:
+                    self.debug_print(f"  Removing fact from fact repository at index {i}")
+                    facts.pop(i)
+                    removed_count += 1
+            
+            self.debug_print(f"  Removed {removed_count} facts from fact repository")
+            # Save changes
+            self.fact_repo._save_to_excel()
+        
+        # Remove from rejected fact repository if it exists
+        if document_name in self.rejected_fact_repo.rejected_facts:
+            rejected_facts = self.rejected_fact_repo.rejected_facts[document_name]
+            removed_count = 0
+            for i in range(len(rejected_facts) - 1, -1, -1):
+                if rejected_facts[i].get("statement", "") == statement:
+                    self.debug_print(f"  Removing fact from rejected fact repository at index {i}")
+                    rejected_facts.pop(i)
+                    removed_count += 1
+            
+            self.debug_print(f"  Removed {removed_count} facts from rejected fact repository")
+            # Save changes
+            self.rejected_fact_repo._save_to_excel()
 
     def approve_fact(self, fact_id, statement, reason):
         """Approve a fact with optional minor modifications."""
         try:
-            self.debug_print(f"Approving fact with ID: {fact_id}, statement: {statement[:50]}...")
+            self.debug_print(f"Approving fact with ID: {fact_id}")
+            self.debug_print(f"  Statement: {statement[:50]}...")
+            self.debug_print(f"  Reason: {reason[:50]}...")
+            
             if not fact_id or not statement:
-                return "Error: Missing fact ID or statement", self.facts_data
+                self.debug_print("Error: Missing fact ID or statement")
+                return "Error: Missing fact ID or statement", self.format_facts_summary(self.facts_data)
             
             result, facts_data = self.update_fact(fact_id, statement, "verified", reason)
             self.debug_print(f"Approval result: {result}")
-            return result, facts_data
+            return result, self.format_facts_summary(self.facts_data)
         except Exception as e:
             import traceback
             self.debug_print(f"Error approving fact: {str(e)}")
             self.debug_print(f"Traceback: {traceback.format_exc()}")
-            return f"Error approving fact: {str(e)}", self.facts_data
+            return f"Error approving fact: {str(e)}", self.format_facts_summary(self.facts_data)
 
     def reject_fact(self, fact_id, statement, reason):
         """Reject a fact with reasoning."""
         try:
-            self.debug_print(f"Rejecting fact with ID: {fact_id}, statement: {statement[:50]}...")
+            self.debug_print(f"Rejecting fact with ID: {fact_id}")
+            self.debug_print(f"  Statement: {statement[:50]}...")
+            self.debug_print(f"  Reason: {reason[:50]}...")
+            
             if not fact_id or not statement:
-                return "Error: Missing fact ID or statement", self.facts_data
+                self.debug_print("Error: Missing fact ID or statement")
+                return "Error: Missing fact ID or statement", self.format_facts_summary(self.facts_data)
                 
             result, facts_data = self.update_fact(fact_id, statement, "rejected", reason)
             self.debug_print(f"Rejection result: {result}")
-            return result, facts_data
+            return result, self.format_facts_summary(self.facts_data)
         except Exception as e:
             import traceback
             self.debug_print(f"Error rejecting fact: {str(e)}")
             self.debug_print(f"Traceback: {traceback.format_exc()}")
-            return f"Error rejecting fact: {str(e)}", self.facts_data
+            return f"Error rejecting fact: {str(e)}", self.format_facts_summary(self.facts_data)
+
+    def export_facts_to_csv(self, output_path):
+        """Export verified facts to CSV format.
+        
+        Args:
+            output_path: Path to save the CSV file
+            
+        Returns:
+            str: Status message with the export result
+        """
+        self.debug_print(f"Exporting facts to CSV: {output_path}")
+        facts = self.fact_repo.get_all_facts(verified_only=True)
+        
+        try:
+            df = pd.DataFrame(facts)
+            df.to_csv(output_path, index=False)
+            return f"Exported {len(facts)} facts to {output_path}"
+        except Exception as e:
+            self.debug_print(f"Error exporting to CSV: {str(e)}")
+            return f"Error exporting facts: {str(e)}"
+
+    def export_facts_to_json(self, output_path):
+        """Export verified facts to JSON format.
+        
+        Args:
+            output_path: Path to save the JSON file
+            
+        Returns:
+            str: Status message with the export result
+        """
+        self.debug_print(f"Exporting facts to JSON: {output_path}")
+        facts = self.fact_repo.get_all_facts(verified_only=True)
+        
+        try:
+            with open(output_path, 'w') as f:
+                json.dump(facts, f, indent=2)
+            return f"Exported {len(facts)} facts to {output_path}"
+        except Exception as e:
+            self.debug_print(f"Error exporting to JSON: {str(e)}")
+            return f"Error exporting facts: {str(e)}"
+
+    def export_facts_to_markdown(self, output_path):
+        """Export verified facts to Markdown format.
+        
+        Args:
+            output_path: Path to save the Markdown file
+            
+        Returns:
+            str: Status message with the export result
+        """
+        self.debug_print(f"Exporting facts to Markdown: {output_path}")
+        facts = self.fact_repo.get_all_facts(verified_only=True)
+        
+        try:
+            # Group facts by document
+            grouped_facts = {}
+            for fact in facts:
+                doc_name = fact.get("document_name", "Unknown Document")
+                if doc_name not in grouped_facts:
+                    grouped_facts[doc_name] = []
+                grouped_facts[doc_name].append(fact)
+            
+            with open(output_path, 'w') as f:
+                f.write("# Verified Facts Report\n\n")
+                f.write(f"Total Facts: {len(facts)}\n\n")
+                
+                for doc_name, doc_facts in grouped_facts.items():
+                    f.write(f"## {doc_name}\n\n")
+                    for i, fact in enumerate(doc_facts):
+                        f.write(f"### Fact {i+1}\n\n")
+                        f.write(f"**Statement:** {fact['statement']}\n\n")
+                        if fact.get("verification_reason"):
+                            f.write(f"**Reasoning:** {fact['verification_reason']}\n\n")
+                        f.write("---\n\n")
+            
+            return f"Exported {len(facts)} facts to {output_path}"
+        except Exception as e:
+            self.debug_print(f"Error exporting to Markdown: {str(e)}")
+            return f"Error exporting facts: {str(e)}"
+
+    def generate_statistics(self):
+        """Generate statistics about extracted facts.
+        
+        Returns:
+            tuple: (overall_stats, doc_stats) where overall_stats is a dict of overall statistics
+                   and doc_stats is a dict of per-document statistics
+        """
+        self.debug_print("Generating fact statistics")
+        
+        # Get data from repositories
+        all_chunks = self.chunk_repo.get_all_chunks()
+        all_facts = self.fact_repo.get_all_facts(verified_only=False)
+        approved_facts = self.fact_repo.get_all_facts(verified_only=True)
+        rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
+        
+        # Calculate overall statistics
+        stats = {
+            "total_documents": len(set(chunk["document_name"] for chunk in all_chunks)),
+            "total_chunks": len(all_chunks),
+            "total_submissions": len(all_facts) + len(rejected_facts),
+            "approved_facts": len(approved_facts),
+            "rejected_facts": len(rejected_facts),
+            "approval_rate": round(len(approved_facts) / (len(approved_facts) + len(rejected_facts)) * 100, 1) if (len(approved_facts) + len(rejected_facts)) > 0 else 0,
+        }
+        
+        # Calculate per-document statistics
+        doc_stats = {}
+        for doc_name in set(chunk["document_name"] for chunk in all_chunks):
+            doc_chunks = [c for c in all_chunks if c["document_name"] == doc_name]
+            doc_approved_facts = [f for f in approved_facts if f["document_name"] == doc_name]
+            doc_rejected_facts = [f for f in rejected_facts if f["document_name"] == doc_name]
+            
+            doc_stats[doc_name] = {
+                "chunks": len(doc_chunks),
+                "approved_facts": len(doc_approved_facts),
+                "rejected_facts": len(doc_rejected_facts),
+                "total_submissions": len(doc_approved_facts) + len(doc_rejected_facts),
+                "facts_per_chunk": round(len(doc_approved_facts) / len(doc_chunks), 2) if len(doc_chunks) > 0 else 0
+            }
+        
+        return stats, doc_stats
+
+    def format_statistics_markdown(self, stats, doc_stats):
+        """Format statistics as markdown.
+        
+        Args:
+            stats: Dict of overall statistics
+            doc_stats: Dict of per-document statistics
+            
+        Returns:
+            str: Markdown formatted statistics
+        """
+        self.debug_print("Formatting statistics as markdown")
+        
+        md = "# Fact Extraction Statistics\n\n"
+        
+        # Overall statistics section
+        md += "## Overall Statistics\n\n"
+        md += f"- **Total Documents:** {stats['total_documents']}\n"
+        md += f"- **Total Chunks:** {stats['total_chunks']}\n"
+        md += f"- **Total Submissions:** {stats['total_submissions']}\n"
+        md += f"- **Approved Facts:** {stats['approved_facts']}\n"
+        md += f"- **Rejected Facts:** {stats['rejected_facts']}\n"
+        md += f"- **Approval Rate:** {stats['approval_rate']}%\n\n"
+        
+        # Per-document statistics section
+        md += "## Document Statistics\n\n"
+        
+        for doc_name, doc_stat in doc_stats.items():
+            md += f"### {doc_name}\n\n"
+            md += f"- **Chunks:** {doc_stat['chunks']}\n"
+            md += f"- **Approved Facts:** {doc_stat['approved_facts']}\n"
+            md += f"- **Rejected Facts:** {doc_stat['rejected_facts']}\n"
+            md += f"- **Total Submissions:** {doc_stat['total_submissions']}\n"
+            md += f"- **Facts per Chunk:** {doc_stat['facts_per_chunk']}\n\n"
+        
+        return md
+
+    async def update_statistics_tab(self, statistics_tab):
+        """Update the statistics tab with current statistics.
+        
+        Args:
+            statistics_tab: Gradio Markdown component to update
+            
+        Returns:
+            str: Markdown content that was used to update the tab
+        """
+        self.debug_print("Updating statistics tab")
+        
+        try:
+            # Generate statistics
+            stats, doc_stats = self.generate_statistics()
+            
+            # Format as markdown
+            markdown_stats = self.format_statistics_markdown(stats, doc_stats)
+            
+            # Update the tab content
+            await statistics_tab.update(value=markdown_stats)
+            
+            return markdown_stats
+        except Exception as e:
+            self.debug_print(f"Error updating statistics tab: {str(e)}")
+            error_message = f"# Error Generating Statistics\n\nAn error occurred while generating statistics: {str(e)}"
+            await statistics_tab.update(value=error_message)
+            return error_message
 
     def build_interface(self) -> gr.Blocks:
         """Build the Gradio interface."""
@@ -790,81 +1183,131 @@ class FactExtractionGUI:
                     review_status = gr.Markdown("")
                     self.debug_print("Created review_status markdown")
             
+            # Statistics Tab
+            with gr.TabItem("Statistics", elem_id="statistics-tab"):
+                with gr.Column():
+                    gr.Markdown("# Fact Extraction Statistics")
+                    statistics_content = gr.Markdown("Process documents to see statistics.")
+                    update_stats_btn = gr.Button("Update Statistics")
+            
+            # Export Tab
+            with gr.TabItem("Export", elem_id="export-tab"):
+                with gr.Column():
+                    gr.Markdown("# Export Verified Facts")
+                    
+                    with gr.Row():
+                        export_format = gr.Dropdown(
+                            label="Export Format",
+                            choices=["CSV", "JSON", "Markdown"],
+                            value="CSV"
+                        )
+                        
+                        export_path = gr.Textbox(
+                            label="Export Path",
+                            placeholder="e.g., /path/to/facts_export.csv",
+                            value="exported_facts"
+                        )
+                    
+                    export_btn = gr.Button("Export Facts", variant="primary")
+                    export_status = gr.Markdown("Select a format and click Export to download verified facts.")
+            
             # Event handlers
             def update_facts_display(chat_history, facts_summary):
                 """Update the facts display with the current facts data."""
                 self.debug_print("update_facts_display called")
                 
                 try:
-                    if not self.facts_data:
-                        self.debug_print("No facts data available")
-                        return chat_history, facts_summary, "No submissions yet.", "No approved facts yet.", "No rejected submissions yet.", "No errors.", gr.update(choices=[], value=None)
-                    
-                    # Format all submissions
+                    # Initialize content for each tab
                     all_submissions_md = ""
-                    for filename, file_facts in self.facts_data.items():
-                        self.debug_print(f"Processing file: {filename}")
-                        if file_facts.get("all_facts"):
-                            all_submissions_md += f"\n## {filename}\n\n"
-                            for i, fact in enumerate(file_facts["all_facts"]):
-                                status = "✅" if fact.get("verification_status") == "verified" else "❌"
-                                all_submissions_md += f"{status} **Fact {i+1}:** {fact['statement']}\n\n"
-                                if fact.get("verification_reason"):
-                                    all_submissions_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
-                                all_submissions_md += "---\n\n"
-                    
-                    # Format approved facts
                     approved_facts_md = ""
-                    for filename, file_facts in self.facts_data.items():
-                        if file_facts.get("verified_facts"):
-                            approved_facts_md += f"\n## {filename}\n\n"
-                            for i, fact in enumerate(file_facts["verified_facts"]):
-                                approved_facts_md += f"✅ **Fact {i+1}:** {fact['statement']}\n\n"
+                    rejected_facts_md = ""
+                    errors_md = ""
+                    
+                    # Fetch facts from repositories
+                    approved_facts_from_repo = self.fact_repo.get_all_facts(verified_only=True)
+                    rejected_facts_from_repo = self.rejected_fact_repo.get_all_rejected_facts()
+                    
+                    self.debug_print(f"Got {len(approved_facts_from_repo)} approved facts from repository")
+                    self.debug_print(f"Got {len(rejected_facts_from_repo)} rejected facts from repository")
+                    
+                    # Group facts by document for better display
+                    grouped_approved_facts = {}
+                    for fact in approved_facts_from_repo:
+                        doc_name = fact.get("document_name", "Unknown Document")
+                        if doc_name not in grouped_approved_facts:
+                            grouped_approved_facts[doc_name] = []
+                        grouped_approved_facts[doc_name].append(fact)
+                    
+                    grouped_rejected_facts = {}
+                    for fact in rejected_facts_from_repo:
+                        doc_name = fact.get("document_name", "Unknown Document")
+                        if doc_name not in grouped_rejected_facts:
+                            grouped_rejected_facts[doc_name] = []
+                        grouped_rejected_facts[doc_name].append(fact)
+                    
+                    # Process in-memory facts if available
+                    if self.facts_data:
+                        # Format all submissions
+                        for filename, file_facts in self.facts_data.items():
+                            self.debug_print(f"Processing file: {filename}")
+                            if file_facts.get("all_facts"):
+                                all_submissions_md += f"\n## {filename}\n\n"
+                                for i, fact in enumerate(file_facts["all_facts"]):
+                                    status = "✅" if fact.get("verification_status") == "verified" else "❌"
+                                    all_submissions_md += f"{status} **Fact {i+1}:** {fact['statement']}\n\n"
+                                    if fact.get("verification_reason"):
+                                        all_submissions_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
+                                    all_submissions_md += "---\n\n"
+                        
+                        # Format in-memory verified facts
+                        for filename, file_facts in self.facts_data.items():
+                            if file_facts.get("verified_facts"):
+                                approved_facts_md += f"\n## {filename} (Current Session)\n\n"
+                                for i, fact in enumerate(file_facts["verified_facts"]):
+                                    approved_facts_md += f"✅ **Fact {i+1}:** {fact['statement']}\n\n"
+                                    if fact.get("verification_reason"):
+                                        approved_facts_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
+                                    approved_facts_md += "---\n\n"
+                        
+                        # Format in-memory rejected facts
+                        for filename, file_facts in self.facts_data.items():
+                            if file_facts.get("all_facts"):
+                                rejected_facts = [f for f in file_facts["all_facts"] if f.get("verification_status") == "rejected"]
+                                if rejected_facts:
+                                    rejected_facts_md += f"\n## {filename} (Current Session)\n\n"
+                                    for i, fact in enumerate(rejected_facts):
+                                        rejected_facts_md += f"❌ **Submission {i+1}:** {fact['statement']}\n\n"
+                                        if fact.get("verification_reason"):
+                                            rejected_facts_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
+                                        rejected_facts_md += "---\n\n"
+                        
+                        # Format errors
+                        for filename, file_facts in self.facts_data.items():
+                            if file_facts.get("errors"):
+                                errors_md += f"\n## {filename}\n\n"
+                                for error in file_facts["errors"]:
+                                    errors_md += f"- {error}\n"
+                                errors_md += "\n"
+                    
+                    # Add repository approved facts
+                    if grouped_approved_facts:
+                        for doc_name, facts in grouped_approved_facts.items():
+                            approved_facts_md += f"\n## {doc_name} (Repository)\n\n"
+                            for i, fact in enumerate(facts):
+                                approved_facts_md += f"✅ **Fact {i+1}:** {fact.get('statement', 'No statement')}\n\n"
                                 if fact.get("verification_reason"):
                                     approved_facts_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
                                 approved_facts_md += "---\n\n"
                     
-                    # Format rejected submissions from facts_data
-                    rejected_facts_md = ""
-                    for filename, file_facts in self.facts_data.items():
-                        if file_facts.get("all_facts"):
-                            rejected_facts = [f for f in file_facts["all_facts"] if f.get("verification_status") == "rejected"]
-                            if rejected_facts:
-                                rejected_facts_md += f"\n## {filename} (In-memory)\n\n"
-                                for i, fact in enumerate(rejected_facts):
-                                    rejected_facts_md += f"❌ **Submission {i+1}:** {fact['statement']}\n\n"
-                                    if fact.get("verification_reason"):
-                                        rejected_facts_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
-                                    rejected_facts_md += "---\n\n"
-                    
-                    # Add rejected facts from the RejectedFactRepository
-                    rejected_facts_from_repo = rejected_fact_repo.get_all_rejected_facts()
-                    if rejected_facts_from_repo:
-                        # Group rejected facts by document
-                        grouped_rejected_facts = {}
-                        for fact in rejected_facts_from_repo:
-                            doc_name = fact.get("document_name", "Unknown Document")
-                            if doc_name not in grouped_rejected_facts:
-                                grouped_rejected_facts[doc_name] = []
-                            grouped_rejected_facts[doc_name].append(fact)
-                        
-                        # Format rejected facts from repository
+                    # Add repository rejected facts
+                    if grouped_rejected_facts:
                         for doc_name, facts in grouped_rejected_facts.items():
-                            rejected_facts_md += f"\n## {doc_name} (Stored)\n\n"
+                            rejected_facts_md += f"\n## {doc_name} (Repository)\n\n"
                             for i, fact in enumerate(facts):
                                 rejected_facts_md += f"❌ **Submission {i+1}:** {fact.get('statement', 'No statement')}\n\n"
                                 if fact.get("verification_reason"):
                                     rejected_facts_md += f"*Reasoning:*\n{fact['verification_reason']}\n\n"
                                 rejected_facts_md += "---\n\n"
-                    
-                    # Format errors
-                    errors_md = ""
-                    for filename, file_facts in self.facts_data.items():
-                        if file_facts.get("errors"):
-                            errors_md += f"\n## {filename}\n\n"
-                            for error in file_facts["errors"]:
-                                errors_md += f"- {error}\n"
-                            errors_md += "\n"
                     
                     # Set default messages if no content
                     if not all_submissions_md:
@@ -1074,7 +1517,7 @@ class FactExtractionGUI:
 
             # Connect approve button
             approve_btn.click(
-                fn=lambda fact_id, statement, reason: self.approve_fact(fact_id, statement, reason) if fact_id and statement else ("Please select a fact first", self.facts_data),
+                fn=lambda fact_id, statement, reason: self.approve_fact(fact_id, statement, reason) if fact_id and statement else ("Please select a fact first", self.format_facts_summary(self.facts_data)),
                 inputs=[fact_id, fact_statement, fact_reason],
                 outputs=[review_status, facts_summary],
                 api_name="approve_fact",
@@ -1094,7 +1537,7 @@ class FactExtractionGUI:
 
             # Connect reject button
             reject_btn.click(
-                fn=lambda fact_id, statement, reason: self.reject_fact(fact_id, statement, reason) if fact_id and statement else ("Please select a fact first", self.facts_data),
+                fn=lambda fact_id, statement, reason: self.reject_fact(fact_id, statement, reason) if fact_id and statement else ("Please select a fact first", self.format_facts_summary(self.facts_data)),
                 inputs=[fact_id, fact_statement, fact_reason],
                 outputs=[review_status, facts_summary],
                 api_name="reject_fact",
@@ -1114,7 +1557,7 @@ class FactExtractionGUI:
 
             # Connect modify button
             modify_btn.click(
-                fn=lambda fact_id, statement, status, reason: self.update_fact(fact_id, statement, status, reason) if fact_id and statement else ("Please select a fact first", self.facts_data),
+                fn=lambda fact_id, statement, status, reason: self.update_fact(fact_id, statement, status, reason) if fact_id and statement else ("Please select a fact first", self.format_facts_summary(self.facts_data)),
                 inputs=[fact_id, fact_statement, fact_status, fact_reason],
                 outputs=[review_status, facts_summary],
                 api_name="update_fact",
@@ -1190,6 +1633,48 @@ class FactExtractionGUI:
                 outputs=[approve_btn, reject_btn, modify_btn]
             )
             
+            # Statistics tab event handler
+            update_stats_btn.click(
+                fn=lambda: asyncio.create_task(self.update_statistics_tab(statistics_content)),
+                inputs=[],
+                outputs=[statistics_content]
+            )
+            
+            # Export tab event handlers
+            def on_export_facts(format_choice, base_path):
+                """Handle fact export based on selected format."""
+                self.debug_print(f"Exporting facts in {format_choice} format to {base_path}")
+                
+                try:
+                    # Add extension if not present
+                    if format_choice == "CSV" and not base_path.lower().endswith(".csv"):
+                        base_path += ".csv"
+                    elif format_choice == "JSON" and not base_path.lower().endswith(".json"):
+                        base_path += ".json"
+                    elif format_choice == "Markdown" and not base_path.lower().endswith((".md", ".markdown")):
+                        base_path += ".md"
+                    
+                    # Export based on format
+                    if format_choice == "CSV":
+                        result = self.export_facts_to_csv(base_path)
+                    elif format_choice == "JSON":
+                        result = self.export_facts_to_json(base_path)
+                    elif format_choice == "Markdown":
+                        result = self.export_facts_to_markdown(base_path)
+                    else:
+                        return "Error: Unknown export format selected."
+                    
+                    return result
+                except Exception as e:
+                    self.debug_print(f"Error exporting facts: {str(e)}")
+                    return f"Error exporting facts: {str(e)}"
+            
+            export_btn.click(
+                fn=on_export_facts,
+                inputs=[export_format, export_path],
+                outputs=[export_status]
+            )
+            
         self.debug_print("Finished building interface")
         return interface
 
@@ -1216,9 +1701,11 @@ if __name__ == "__main__":
                 server_port=port,
                 share=False,
                 show_error=True,
-                debug=True
+                debug=True,
+                inbrowser=True  # Try to open in browser automatically
             )
             print(f"\nServer running on port {port}")
+            print(f"\nAccess the application at: http://127.0.0.1:{port}")
             break
         except OSError as e:
             if "address already in use" in str(e).lower():

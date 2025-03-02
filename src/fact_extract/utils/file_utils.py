@@ -108,6 +108,7 @@ def is_valid_file(file_path: str) -> bool:
     
     # Check file extension
     ext = path.suffix.lower()
+    print(f"Checking file: {file_path}, extension: {ext}, allowed: {ext in ALLOWED_EXTENSIONS}")
     if ext not in ALLOWED_EXTENSIONS:
         return False
         
@@ -115,23 +116,16 @@ def is_valid_file(file_path: str) -> bool:
     if not path.exists():
         return False
         
+    # Check file size
     try:
-        # Check file size based on type
+        file_size = path.stat().st_size / (1024 * 1024)  # Convert to MB
         max_size = get_max_size_for_extension(ext)
-        file_size_mb = path.stat().st_size / (1024 * 1024)  # Convert to MB
-        if file_size_mb > max_size:
+        if file_size > max_size:
             return False
-            
-        # Additional checks for specific formats
-        if ext in {'.xls', '.xlsx', '.csv'}:
-            # Ensure file is not empty
-            if file_size_mb < 0.001:  # Less than 1KB
-                return False
-                
-        return True
-        
     except Exception:
         return False
+        
+    return True
 
 def get_temp_path(file_name: str) -> Path:
     """
