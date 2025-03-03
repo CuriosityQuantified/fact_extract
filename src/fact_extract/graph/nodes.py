@@ -13,7 +13,17 @@ import os
 import hashlib
 
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import ToolExecutor
+# Try different import paths for ToolNode based on langgraph version
+try:
+    # Newer versions
+    from langgraph.prebuilt.tool_node import ToolNode
+except ImportError:
+    try:
+        # Alternative location
+        from langgraph.prebuilt import ToolNode
+    except ImportError:
+        # Original location (older versions)
+        from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import MessageGraph
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate

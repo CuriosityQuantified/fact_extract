@@ -243,7 +243,7 @@ async def test_fact_display_format():
 
 def test_fact_toggle_state_preservation():
     """Test that fact toggle state is preserved between updates."""
-    from src.fact_extract.tests.test_gui_toggle import format_facts_for_display
+    from src.fact_extract.unit_tests.test_gui_toggle import format_facts_for_display
     
     # Create sample facts data
     facts_data = {

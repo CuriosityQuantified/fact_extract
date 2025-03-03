@@ -3,11 +3,25 @@ Tool for submitting verified facts to the repository.
 """
 
 import logging
+import os
 from typing import Dict, Optional, Type
 from datetime import datetime
+from pathlib import Path
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
+
+# Explicitly load environment variables from .env file
+from dotenv import load_dotenv
+# Find the project root by going up 3 levels from this file
+project_root = Path(__file__).parents[3]
+env_path = project_root / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# Ensure API key is available
+api_key = os.environ.get('OPENAI_API_KEY')
+if not api_key:
+    print("Warning: OPENAI_API_KEY not found in environment variables.")
 
 from ..storage.fact_repository import FactRepository
 from ..agents.verification import FactVerificationAgent
@@ -18,7 +32,8 @@ logger = logging.getLogger(__name__)
 _repository = FactRepository()
 _llm = ChatOpenAI(
     model="gpt-3.5-turbo",
-    temperature=0  # Keep temperature at 0 for consistent outputs
+    temperature=0,  # Keep temperature at 0 for consistent outputs
+    api_key=api_key  # Explicitly pass the API key
 )
 _verifier = FactVerificationAgent(llm=_llm)
 
@@ -33,15 +48,29 @@ class FactSubmissionInput(BaseModel):
 class FactSubmissionTool:
     """Tool for submitting facts for verification and storage."""
     
-    def __init__(self, verifier: FactVerificationAgent, repository: FactRepository):
+    def __init__(self, repository=None, verifier=None):
         """Initialize the submission tool.
         
         Args:
-            verifier: Agent for verifying facts
-            repository: Repository for storing facts
+            repository: Repository for storing facts (default: global instance)
+            verifier: Agent for verifying facts (default: global instance)
         """
-        self.verifier = verifier
-        self.repository = repository
+        self._repository = repository
+        self._verifier = verifier
+    
+    @property
+    def repository(self):
+        """Lazy-load the repository only when needed."""
+        if self._repository is None:
+            self._repository = _repository
+        return self._repository
+    
+    @property
+    def verifier(self):
+        """Lazy-load the verifier only when needed."""
+        if self._verifier is None:
+            self._verifier = _verifier
+        return self._verifier
         
     def _run(self, fact_text: str, document_name: str, source_url: str, original_text: str, chunk_index: int) -> Dict:
         """Run the fact submission workflow.
@@ -106,4 +135,5 @@ class FactSubmissionTool:
                 "fact_data": None
             }
 
-submit_fact = FactSubmissionTool(_verifier, _repository) 
+# Initialize the tool with default instances
+submit_fact = FactSubmissionTool() 

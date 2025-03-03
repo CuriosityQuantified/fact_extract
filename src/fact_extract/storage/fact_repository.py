@@ -491,7 +491,11 @@ class RejectedFactRepository:
             str: Hash of the fact
         """
         # Use only the statement to create a unique hash
-        fact_text = fact_data.get("statement", "").strip()
+        statement = fact_data.get("statement", "")
+        # Convert to string if it's not already
+        if not isinstance(statement, str):
+            statement = str(statement) if statement is not None else ""
+        fact_text = statement.strip()
         
         # Create a hash of the fact text to identify duplicates
         hash_input = fact_text.encode('utf-8')

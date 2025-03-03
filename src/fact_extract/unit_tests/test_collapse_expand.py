@@ -10,7 +10,7 @@ import re
 from unittest.mock import Mock, patch, MagicMock
 
 from src.fact_extract.gui.app import FactExtractionGUI
-from src.fact_extract.tests.test_gui_toggle import format_facts_for_display
+from src.fact_extract.unit_tests.test_gui_toggle import format_facts_for_display
 
 def extract_script(html_content):
     """Extract the JavaScript script from HTML content."""

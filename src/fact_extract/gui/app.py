@@ -16,6 +16,7 @@ import gradio as gr
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
+import time
 
 # Import document processing libraries
 from pypdf import PdfReader
@@ -57,7 +58,7 @@ def create_message(content: str, is_user: bool = False) -> Dict[str, str]:
     }
 
 class FactExtractionGUI:
-    def __init__(self):
+    def __init__(self, chunk_repo_path=None, fact_repo_path=None, rejected_fact_repo_path=None):
         self.state = ProcessingState()
         self.processing = False
         self.theme = gr.themes.Soft(
@@ -68,9 +69,9 @@ class FactExtractionGUI:
         self.chat_history = []
         
         # Initialize repositories
-        self.chunk_repo = ChunkRepository()
-        self.fact_repo = FactRepository()
-        self.rejected_fact_repo = RejectedFactRepository()
+        self.chunk_repo = ChunkRepository(excel_path=chunk_repo_path) if chunk_repo_path else ChunkRepository()
+        self.fact_repo = FactRepository(excel_path=fact_repo_path) if fact_repo_path else FactRepository()
+        self.rejected_fact_repo = RejectedFactRepository(excel_path=rejected_fact_repo_path) if rejected_fact_repo_path else RejectedFactRepository()
         
         # Create workflow
         self.workflow, self.input_key = create_workflow(self.chunk_repo, self.fact_repo)
@@ -92,7 +93,7 @@ class FactExtractionGUI:
         with open("app_debug.log", "a") as f:
             f.write(log_message + "\n")
 
-    def format_facts_summary(self, facts: Dict) -> str:
+    def format_facts_summary(self, facts):
         """Format summary of extracted facts."""
         if not facts:
             return "No facts extracted yet"
@@ -101,12 +102,20 @@ class FactExtractionGUI:
         total_approved = 0
         total_rejected = 0
         
-        for filename, file_facts in facts.items():
-            # Track totals
-            if "total_facts" in file_facts:
-                total_submitted += file_facts["total_facts"]
-                total_approved += file_facts.get("verified_count", 0)
-                total_rejected += (file_facts["total_facts"] - file_facts.get("verified_count", 0))
+        # Handle both list and dict inputs
+        if isinstance(facts, list):
+            # List of facts
+            total_submitted = len(facts)
+            total_approved = sum(1 for f in facts if f.get("verification_status") == "verified")
+            total_rejected = total_submitted - total_approved
+        else:
+            # Dictionary of facts by filename
+            for filename, file_facts in facts.items():
+                # Track totals
+                if "total_facts" in file_facts:
+                    total_submitted += file_facts["total_facts"]
+                    total_approved += file_facts.get("verified_count", 0)
+                    total_rejected += (file_facts["total_facts"] - file_facts.get("verified_count", 0))
         
         # Create summary text
         output = []
@@ -1677,6 +1686,129 @@ class FactExtractionGUI:
             
         self.debug_print("Finished building interface")
         return interface
+
+    def get_document_list(self):
+        """Get a list of all document names from the repositories."""
+        # Get document names from chunk repository
+        document_names = set()
+        
+        # Add document names from chunks
+        for chunk in self.chunk_repo.get_all_chunks():
+            if "document_name" in chunk:
+                document_names.add(chunk["document_name"])
+        
+        # Add document names from facts
+        for fact in self.fact_repo.get_all_facts(verified_only=False):
+            if "document_name" in fact:
+                document_names.add(fact["document_name"])
+        
+        # Add document names from rejected facts
+        for fact in self.rejected_fact_repo.get_all_rejected_facts():
+            if "document_name" in fact:
+                document_names.add(fact["document_name"])
+        
+        return list(document_names)
+    
+    def get_rejected_facts(self):
+        """Get all rejected facts."""
+        return self.rejected_fact_repo.get_all_rejected_facts()
+    
+    def process_document(self, file):
+        """Process a single document file."""
+        if self.processing:
+            return "Processing already in progress"
+        
+        self.processing = True
+        try:
+            # Save the file to a temporary location
+            temp_path = f"temp_{file.name}"
+            file_path = file.save(temp_path)
+            self.temp_files.append(temp_path)
+            
+            # Extract text from the file
+            text = extract_text_from_file(file_path)
+            if not text:
+                self.processing = False
+                return f"No text could be extracted from {file.name}"
+            
+            # Create initial state for the workflow
+            workflow_state = {
+                "input": {
+                    "document_name": file.name,
+                    "document_content": text
+                },
+                # Add required fields to state
+                "session_id": f"session_{int(time.time())}",
+                "input_text": text,
+                "document_name": file.name,
+                "source_url": "",
+                "chunks": [],
+                "current_chunk_index": 0,
+                "extracted_facts": [],
+                "memory": {
+                    "document_stats": {},
+                    "fact_patterns": [],
+                    "entity_mentions": {},
+                    "recent_facts": [],
+                    "error_counts": {},
+                    "performance_metrics": {
+                        "start_time": datetime.now().isoformat(),
+                        "chunks_processed": 0,
+                        "facts_extracted": 0,
+                        "errors_encountered": 0
+                    }
+                },
+                "last_processed_time": datetime.now().isoformat(),
+                "errors": [],
+                "is_complete": False
+            }
+            
+            # Run the workflow
+            import asyncio
+            try:
+                # Try to run in an event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We're already in an event loop, use ainvoke directly
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.workflow.ainvoke(workflow_state), loop
+                    ).result()
+                else:
+                    # No event loop running, create one
+                    result = loop.run_until_complete(self.workflow.ainvoke(workflow_state))
+            except RuntimeError:
+                # No event loop, create a new one
+                result = asyncio.run(self.workflow.ainvoke(workflow_state))
+            
+            # Process the result
+            if result.get("status") == "success":
+                # Store facts in memory for display
+                if file.name not in self.facts_data:
+                    self.facts_data[file.name] = {
+                        "all_facts": [],
+                        "verified_facts": [],
+                        "total_facts": 0,
+                        "verified_count": 0,
+                        "errors": []
+                    }
+                
+                # Add facts to memory
+                if "facts" in result and result["facts"]:
+                    self.facts_data[file.name]["all_facts"].extend(result["facts"])
+                    verified_facts = [f for f in result["facts"] if f.get("verification_status") == "verified"]
+                    self.facts_data[file.name]["verified_facts"].extend(verified_facts)
+                    self.facts_data[file.name]["total_facts"] += len(result["facts"])
+                    self.facts_data[file.name]["verified_count"] += len(verified_facts)
+                
+                return f"Document processed successfully: {result.get('message', '')}"
+            else:
+                return f"Error processing document: {result.get('message', 'Unknown error')}"
+        
+        except Exception as e:
+            return f"Error processing document: {str(e)}"
+        
+        finally:
+            self.processing = False
 
 def create_app():
     """Create and configure the Gradio app."""
