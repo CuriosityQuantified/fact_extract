@@ -93,10 +93,11 @@ async def process_documents():
 
 ## Data Storage
 
-The system stores all processed chunks and extracted facts in Excel files:
+The system stores all processed chunks, extracted facts, and rejected facts in Excel files:
 
 - **Chunks**: All document chunks are stored in `src/fact_extract/data/all_chunks.xlsx`
 - **Facts**: All verified facts are stored in `src/fact_extract/data/all_facts.xlsx`
+- **Rejected Facts**: All rejected facts are stored in `src/fact_extract/data/rejected_facts.xlsx`
 
 ### Storage Features
 
