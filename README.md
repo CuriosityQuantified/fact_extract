@@ -25,14 +25,43 @@ A robust document processing system that extracts content from various document 
 ```bash
 # Clone the repository
 git clone [repository-url]
-cd document-processing-system
+cd fact-extract-fresh
 
-# Create and activate virtual environment
+# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
+
+# If pip is missing from the virtual environment, install it
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+venv/bin/python get-pip.py
 
 # Install dependencies
-pip install -r requirements.txt
+venv/bin/python -m pip install -r requirements.txt
+
+# Configure OpenAI API key in .env file
+echo "OPENAI_API_KEY=your_api_key_here" > .env
+```
+
+### Environment Configuration
+
+For the system to work properly, you'll need to set up the following environment variables:
+
+1. Create a `.env` file in the project root with:
+```
+OPENAI_API_KEY=your_api_key_here
+```
+
+2. Alternatively, you can set the environment variable directly in your shell:
+```bash
+# On macOS/Linux:
+export OPENAI_API_KEY=your_api_key_here
+# On Windows:
+# set OPENAI_API_KEY=your_api_key_here
 ```
 
 ## Usage
@@ -115,14 +144,33 @@ Run the test suite:
 
 ```bash
 # Run all tests
-python -m pytest
+venv/bin/python -m pytest
 
-# Run edge case tests
-python -m pytest src/fact_extract/tests/test_document_processors_edge_cases.py
+# Run specific test files
+venv/bin/python -m pytest src/fact_extract/unit_tests/test_unicode_handling.py
 
-# Test Excel storage and duplicate detection
-python test_excel_storage.py
+# Run tests with verbosity
+venv/bin/python -m pytest -v
+
+# Run specific test class
+venv/bin/python -m pytest src/fact_extract/unit_tests/test_state_persistence.py::TestStatePersistence
 ```
+
+### Test Structure
+
+- All tests are located in the `src/fact_extract/unit_tests/` directory
+- The test configuration is defined in `pyproject.toml`
+- The system uses pytest-asyncio for testing asynchronous functions
+- Some tests require the OpenAI API key to be set in the environment
+
+### Debugging Tests
+
+If you encounter issues with tests:
+
+1. Ensure your virtual environment is active and all dependencies are installed
+2. Verify that your OpenAI API key is correctly set in the `.env` file
+3. Run specific test files with increased verbosity: `venv/bin/python -m pytest -v path/to/test_file.py`
+4. For asynchronous test errors, check that the `@pytest.mark.asyncio` decorator is applied to async test functions
 
 ## License
 
@@ -134,12 +182,12 @@ The system includes a web-based GUI for easy document processing and fact extrac
 
 1. Install the required dependencies:
 ```bash
-pip install -r requirements.txt
+venv/bin/python -m pip install -r requirements.txt
 ```
 
 2. Launch the GUI:
 ```bash
-python -m src.fact_extract.gui.app
+venv/bin/python -m src.fact_extract.gui.app
 ```
 
 3. Access the interface:
