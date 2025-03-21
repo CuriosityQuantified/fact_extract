@@ -4,7 +4,7 @@ langchain-core>=0.1.0
 langchain-community>=0.0.10
 langchain-openai>=0.0.3
 langchain-text-splitters>=0.0.1
-langgraph>=0.0.15
+langgraph>=0.3.2
 
 # LLM and AI dependencies
 openai>=1.0.0
@@ -17,19 +17,21 @@ pydantic>=2.0.0
 typing-extensions>=4.5.0
 
 # Document processing
-pypdf>=3.15.1
+pypdf>=4.0.0
 python-docx>=0.8.11
 
 # Environment and config
 python-dotenv>=1.0.0
 
 # GUI
-gradio>=4.0.0
+gradio>=4.28.3
+python-multipart>=0.0.6
 
 # Testing
 pytest>=7.3.1
 pytest-asyncio>=0.21.0
+reportlab>=4.0.0
 
 # Development
 ruff>=0.0.292
-setuptools>=61.0 
+setuptools>=61.0

@@ -1,29 +1,48 @@
-data/all_facts.xlsx
-data/rejected_facts.xlsx
-data/all_chunks.xlsx
+# Ignore data files
+data/*.xlsx
+!data/.gitkeep
+
+# Ignore Excel files at root level
+/*.xlsx
+processed_chunks.xlsx
+unprocessed_chunks.xlsx
+facts.xlsx
+
+# Ignore log files
 *.log
+debug_output.log
+app_debug.log
+
+# Ignore accidental duplicate directories
+src/src/
+
+# Python cache files
 __pycache__/
-.pytest_cache/
-venv/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Virtual Environment
+venv/
+ENV/
+
+# Environment variables
+.env
+
+# Testing
+test_data/
+.pytest_cache/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Other
 commit_message.txt
 commit_msg.txt
-.env
