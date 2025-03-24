@@ -25,8 +25,8 @@ import pandas as pd
 import json
 import time
 
-from models.state import ProcessingState, create_initial_state
-from utils.file_utils import (
+from src.models.state import ProcessingState, create_initial_state
+from src.utils.file_utils import (
     is_valid_file, 
     get_temp_path,
     cleanup_temp_files,
@@ -34,9 +34,9 @@ from utils.file_utils import (
     MAX_FILE_SIZES,
     extract_text_from_file
 )
-from graph.nodes import create_workflow
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.graph.nodes import create_workflow
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 def format_file_types() -> str:
     """Format allowed file types for display."""
@@ -1349,112 +1349,6 @@ class FactExtractionGUI:
             self.debug_print(f"Error exporting to Markdown: {str(e)}")
             return f"Error exporting facts: {str(e)}"
 
-    def generate_statistics(self):
-        """Generate statistics about extracted facts.
-        
-        Returns:
-            tuple: (overall_stats, doc_stats) where overall_stats is a dict of overall statistics
-                   and doc_stats is a dict of per-document statistics
-        """
-        self.debug_print("Generating fact statistics")
-        
-        # Get data from repositories
-        all_chunks = self.chunk_repo.get_all_chunks()
-        all_facts = self.fact_repo.get_all_facts(verified_only=False)
-        approved_facts = self.fact_repo.get_all_facts(verified_only=True)
-        rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
-        
-        # Calculate overall statistics
-        stats = {
-            "total_documents": len(set(chunk["document_name"] for chunk in all_chunks)),
-            "total_chunks": len(all_chunks),
-            "total_submissions": len(all_facts) + len(rejected_facts),
-            "approved_facts": len(approved_facts),
-            "rejected_facts": len(rejected_facts),
-            "approval_rate": round(len(approved_facts) / (len(approved_facts) + len(rejected_facts)) * 100, 1) if (len(approved_facts) + len(rejected_facts)) > 0 else 0,
-        }
-        
-        # Calculate per-document statistics
-        doc_stats = {}
-        for doc_name in set(chunk["document_name"] for chunk in all_chunks):
-            doc_chunks = [c for c in all_chunks if c["document_name"] == doc_name]
-            doc_approved_facts = [f for f in approved_facts if f["document_name"] == doc_name]
-            doc_rejected_facts = [f for f in rejected_facts if f["document_name"] == doc_name]
-            
-            doc_stats[doc_name] = {
-                "chunks": len(doc_chunks),
-                "approved_facts": len(doc_approved_facts),
-                "rejected_facts": len(doc_rejected_facts),
-                "total_submissions": len(doc_approved_facts) + len(doc_rejected_facts),
-                "facts_per_chunk": round(len(doc_approved_facts) / len(doc_chunks), 2) if len(doc_chunks) > 0 else 0
-            }
-        
-        return stats, doc_stats
-
-    def format_statistics_markdown(self, stats, doc_stats):
-        """Format statistics as markdown.
-        
-        Args:
-            stats: Dict of overall statistics
-            doc_stats: Dict of per-document statistics
-            
-        Returns:
-            str: Markdown formatted statistics
-        """
-        self.debug_print("Formatting statistics as markdown")
-        
-        md = "# Fact Extraction Statistics\n\n"
-        
-        # Overall statistics section
-        md += "## Overall Statistics\n\n"
-        md += f"- **Total Documents:** {stats['total_documents']}\n"
-        md += f"- **Total Chunks:** {stats['total_chunks']}\n"
-        md += f"- **Total Submissions:** {stats['total_submissions']}\n"
-        md += f"- **Approved Facts:** {stats['approved_facts']}\n"
-        md += f"- **Rejected Facts:** {stats['rejected_facts']}\n"
-        md += f"- **Approval Rate:** {stats['approval_rate']}%\n\n"
-        
-        # Per-document statistics section
-        md += "## Document Statistics\n\n"
-        
-        for doc_name, doc_stat in doc_stats.items():
-            md += f"### {doc_name}\n\n"
-            md += f"- **Chunks:** {doc_stat['chunks']}\n"
-            md += f"- **Approved Facts:** {doc_stat['approved_facts']}\n"
-            md += f"- **Rejected Facts:** {doc_stat['rejected_facts']}\n"
-            md += f"- **Total Submissions:** {doc_stat['total_submissions']}\n"
-            md += f"- **Facts per Chunk:** {doc_stat['facts_per_chunk']}\n\n"
-        
-        return md
-
-    async def update_statistics_tab(self, statistics_tab):
-        """Update the statistics tab with current statistics.
-        
-        Args:
-            statistics_tab: Gradio Markdown component to update
-            
-        Returns:
-            str: Markdown content that was used to update the tab
-        """
-        self.debug_print("Updating statistics tab")
-        
-        try:
-            # Generate statistics
-            stats, doc_stats = self.generate_statistics()
-            
-            # Format as markdown
-            markdown_stats = self.format_statistics_markdown(stats, doc_stats)
-            
-            # Update the tab content
-            await statistics_tab.update(value=markdown_stats)
-            
-            return markdown_stats
-        except Exception as e:
-            self.debug_print(f"Error updating statistics tab: {str(e)}")
-            error_message = f"# Error Generating Statistics\n\nAn error occurred while generating statistics: {str(e)}"
-            await statistics_tab.update(value=error_message)
-            return error_message
-
     def build_interface(self) -> gr.Blocks:
         """Build the Gradio interface."""
         self.debug_print("Building Gradio interface")
@@ -1590,13 +1484,6 @@ class FactExtractionGUI:
                     # Status message
                     review_status = gr.Markdown("")
                     self.debug_print("Created review_status markdown")
-            
-            # Statistics Tab
-            with gr.TabItem("Statistics", elem_id="statistics-tab"):
-                with gr.Column():
-                    gr.Markdown("# Fact Extraction Statistics")
-                    statistics_content = gr.Markdown("Process documents to see statistics.")
-                    update_stats_btn = gr.Button("Update Statistics")
             
             # Export Tab
             with gr.TabItem("Export", elem_id="export-tab"):
@@ -2099,13 +1986,6 @@ class FactExtractionGUI:
                 fn=enable_buttons,
                 inputs=None,
                 outputs=[approve_btn, reject_btn, modify_btn]
-            )
-            
-            # Statistics tab event handler
-            update_stats_btn.click(
-                fn=lambda: asyncio.create_task(self.update_statistics_tab(statistics_content)),
-                inputs=[],
-                outputs=[statistics_content]
             )
             
             # Export tab event handlers
