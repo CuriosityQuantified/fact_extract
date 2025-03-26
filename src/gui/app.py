@@ -59,29 +59,34 @@ def create_message(content: str, is_user: bool = False) -> Dict[str, str]:
 
 class FactExtractionGUI:
     def __init__(self):
-        self.state = ProcessingState()
-        self.processing = False
+        # Application state
+        self.state = ProcessingState()              # Tracks document processing
+        self.processing = False                     # Flag for ongoing processing
+        self.chat_history = []                      # Chat-like status messages
+        self.temp_files = []                        # Temporary file management
+        self.facts_data = {}                        # In-memory facts data structure
+        
+        # Theme configuration
         self.theme = gr.themes.Soft(
             primary_hue="blue",
             secondary_hue="gray",
         )
-        self.temp_files = []
-        self.chat_history = []
         
-        # Initialize repositories
-        self.chunk_repo = ChunkRepository()
-        self.fact_repo = FactRepository()
-        self.rejected_fact_repo = RejectedFactRepository()
+        # Connect to backend repositories
+        self.chunk_repo = ChunkRepository()         # Chunk storage
+        self.fact_repo = FactRepository()           # Fact storage
+        self.rejected_fact_repo = RejectedFactRepository()  # Rejected fact storage
         
-        # Create workflow
+        # Create workflow connection
         self.workflow, self.input_key = create_workflow(self.chunk_repo, self.fact_repo)
         
-        # Store facts data for UI updates
-        self.facts_data = {}
-        
-        # Debug mode
+        # Debug mode flag
         self.debug = True
-        print("DEBUG_INIT: FactExtractionGUI initialized")
+        
+        # Load all facts from repositories at startup
+        self.debug_print("Initializing GUI: Loading existing facts...")
+        self.refresh_facts_data()
+        self.debug_print(f"Loaded facts from repositories at startup")
 
     def debug_print(self, message):
         """Print a debug message and also log it to a file."""
@@ -705,119 +710,151 @@ class FactExtractionGUI:
         return all_submissions_md, approved_facts_md, rejected_facts_md, errors_md
     
     def get_facts_for_review(self):
-        """Get all facts available for review."""
-        self.debug_print(f"get_facts_for_review called, facts_data has {len(self.facts_data)} files")
-        
+        """Get all facts available for review from memory and repositories."""
+        self.debug_print(f"get_facts_for_review called.")
+
         all_facts = []
         fact_choices = []
-        
-        # First add facts from in-memory data
-        for filename, file_facts in self.facts_data.items():
-            self.debug_print(f"Processing file: {filename}")
-            if file_facts.get("all_facts"):
-                for i, fact in enumerate(file_facts["all_facts"]):
-                    self.debug_print(f"  Processing fact {i} with status: {fact.get('verification_status', 'pending')}")
-                    
-                    # Add unique ID to fact if not present
-                    if "id" not in fact or fact["id"] is None:
-                        fact["id"] = i + 1  # Use sequential ID starting from 1
-                        self.debug_print(f"  Assigned new ID {fact['id']} to fact {i}")
-                    
-                    # Add filename to fact for reference
+        processed_fact_ids = set() # Keep track of fact IDs to avoid duplicates
+
+        # --- Process facts currently in self.facts_data ---
+        # This data might be from refresh_facts_data (List) or format_tabs_content (Dict)
+        self.debug_print(f"Processing self.facts_data which has {len(self.facts_data)} entries.")
+        for filename, file_data in self.facts_data.items():
+            self.debug_print(f"  Processing entry for file: {filename}")
+            facts_to_process = []
+
+            if isinstance(file_data, dict) and "all_facts" in file_data:
+                # Handle structure from format_tabs_content: Dict[str, Dict[str, Any]]
+                self.debug_print(f"    Found dict structure (likely from process_files).")
+                facts_to_process = file_data.get("all_facts", [])
+            elif isinstance(file_data, list):
+                # Handle structure from refresh_facts_data: Dict[str, List[Dict[str, Any]]]
+                self.debug_print(f"    Found list structure (likely from refresh_facts_data).")
+                facts_to_process = file_data
+            else:
+                self.debug_print(f"    Skipping unexpected data type for file: {filename} (Type: {type(file_data)})")
+                continue
+
+            if not facts_to_process:
+                self.debug_print(f"    No facts found to process for {filename} in self.facts_data.")
+                continue
+
+            self.debug_print(f"    Processing {len(facts_to_process)} facts from self.facts_data for {filename}.")
+            for i, fact in enumerate(facts_to_process):
+                # Ensure fact is a dictionary
+                if not isinstance(fact, dict):
+                    self.debug_print(f"      Skipping non-dict item at index {i}: {fact}")
+                    continue
+
+                # Generate or retrieve a unique ID for the fact
+                fact_id = self._generate_persistent_id(fact)
+                fact['id'] = fact_id # Ensure the fact dict has the ID
+
+                if fact_id in processed_fact_ids:
+                    self.debug_print(f"      Skipping duplicate fact ID {fact_id} from self.facts_data.")
+                    continue
+
+                # Add filename if missing
+                if "filename" not in fact:
                     fact["filename"] = filename
-                    
-                    # Add to all_facts list
-                    all_facts.append(fact)
-                    
-                    # Format choice
-                    statement = fact.get("statement", "")
-                    if not isinstance(statement, str):
-                        statement = str(statement) if statement is not None else ""
-                    preview = statement[:40] + "..." if len(statement) > 40 else statement
-                    status_icon = "✅" if fact.get("verification_status") == "verified" else "❌" if fact.get("verification_status") == "rejected" else "⏳"
-                    choice_text = f"{status_icon} {preview} (Current Session)"
-                    fact_choices.append(choice_text)
-                    self.debug_print(f"  Added choice: '{choice_text}'")
-        
-        # Create sets to track statements we've already included
-        included_statements = {(f.get('statement', ''), f.get('document_name', '')) for f in all_facts}
-        
+
+                # Add to all_facts list and track ID
+                all_facts.append(fact)
+                processed_fact_ids.add(fact_id)
+
+                # Format choice for dropdown
+                statement = fact.get("statement", "")
+                if not isinstance(statement, str):
+                    statement = str(statement) if statement is not None else ""
+                preview = statement[:40] + "..." if len(statement) > 40 else statement
+                status = fact.get("verification_status", "pending")
+                status_icon = "✅" if status == "verified" else "❌" if status == "rejected" else "⏳"
+                # Indicate source (memory/session)
+                choice_text = f"{status_icon} {preview} ({filename})"
+                fact_choices.append((choice_text, fact_id)) # Use fact_id as the value
+                self.debug_print(f"      Added choice: '{choice_text}' with ID {fact_id}")
+
+        self.debug_print(f"Processed {len(all_facts)} unique facts from self.facts_data.")
+
+        # --- Add facts from repositories (approved and rejected) ---
+        # Ensure we don't add duplicates already processed from self.facts_data
+
         # Add approved facts from repository
-        repo_approved_facts = self.fact_repo.get_all_facts(verified_only=True)
-        self.debug_print(f"Got {len(repo_approved_facts)} approved facts from repository")
-        
-        for i, fact in enumerate(repo_approved_facts):
-            # Skip if we've already included this fact from in-memory data
-            statement_key = (fact.get('statement', ''), fact.get('document_name', ''))
-            if statement_key in included_statements:
-                self.debug_print(f"  Skipping approved repo fact {i} as it's already in memory")
-                continue
-                
-            # Add unique ID to fact if not present
-            if "id" not in fact or fact["id"] is None:
-                fact["id"] = len(all_facts) + i + 1  # Use sequential ID continuing from in-memory facts
-                self.debug_print(f"  Assigned new ID {fact['id']} to approved repo fact {i}")
-                
-            # Add filename to fact for reference
-            fact["filename"] = fact.get("document_name", "Unknown Document")
-            
-            # Add to all_facts list
-            all_facts.append(fact)
-            included_statements.add(statement_key)
-            
-            # Format choice
-            statement = fact.get("statement", "")
-            if not isinstance(statement, str):
-                statement = str(statement) if statement is not None else ""
-            preview = statement[:40] + "..." if len(statement) > 40 else statement
-            choice_text = f"✅ {preview} (Repository)"
-            fact_choices.append(choice_text)
-            self.debug_print(f"  Added choice: '{choice_text}'")
-        
+        try:
+            repo_approved_facts = self.fact_repo.get_all_facts(verified_only=True)
+            self.debug_print(f"Retrieved {len(repo_approved_facts)} approved facts from repository.")
+            for i, fact in enumerate(repo_approved_facts):
+                if not isinstance(fact, dict):
+                    self.debug_print(f"  Skipping non-dict approved repo fact at index {i}: {fact}")
+                    continue
+
+                fact_id = self._generate_persistent_id(fact)
+                fact['id'] = fact_id
+
+                if fact_id in processed_fact_ids:
+                    self.debug_print(f"  Skipping duplicate approved repo fact ID {fact_id}.")
+                    continue
+
+                # Add filename if missing
+                if "filename" not in fact:
+                     fact["filename"] = fact.get("document_name", "Unknown Document")
+
+                all_facts.append(fact)
+                processed_fact_ids.add(fact_id)
+
+                statement = fact.get("statement", "")
+                if not isinstance(statement, str):
+                    statement = str(statement) if statement is not None else ""
+                preview = statement[:40] + "..." if len(statement) > 40 else statement
+                doc_name = fact.get("document_name", "Repo")
+                choice_text = f"✅ {preview} ({doc_name})"
+                fact_choices.append((choice_text, fact_id))
+                self.debug_print(f"  Added approved repo choice: '{choice_text}' with ID {fact_id}")
+        except Exception as e:
+            self.debug_print(f"Error retrieving approved facts from repository: {e}")
+
+
         # Add rejected facts from repository
-        repo_rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
-        self.debug_print(f"Got {len(repo_rejected_facts)} rejected facts from repository")
-        
-        for i, fact in enumerate(repo_rejected_facts):
-            # Skip if we've already included this fact from in-memory data or approved repo
-            statement_key = (fact.get('statement', ''), fact.get('document_name', ''))
-            if statement_key in included_statements:
-                self.debug_print(f"  Skipping rejected repo fact {i} as it's already included")
-                continue
-                
-            # Add unique ID to fact if not present
-            if "id" not in fact or fact["id"] is None:
-                fact["id"] = len(all_facts) + i + 1  # Use sequential ID continuing from previous facts
-                self.debug_print(f"  Assigned new ID {fact['id']} to rejected repo fact {i}")
-                
-            # Add filename to fact for reference
-            fact["filename"] = fact.get("document_name", "Unknown Document")
-            
-            # Add to all_facts list
-            all_facts.append(fact)
-            included_statements.add(statement_key)
-            
-            # Format choice
-            statement = fact.get("statement", "")
-            if not isinstance(statement, str):
-                statement = str(statement) if statement is not None else ""
-            preview = statement[:40] + "..." if len(statement) > 40 else statement
-            choice_text = f"❌ {preview} (Repository)"
-            fact_choices.append(choice_text)
-            self.debug_print(f"  Added choice: '{choice_text}'")
-        
-        # Debug information
-        self.debug_print(f"Found {len(all_facts)} total facts for review")
-        for i, fact in enumerate(all_facts):
-            statement = fact.get('statement', '')
-            if not isinstance(statement, str):
-                statement = str(statement) if statement is not None else ""
-            self.debug_print(f"Fact {i}: ID={fact.get('id')}, Statement={statement[:30]}...")
-        
-        self.debug_print(f"Returning {len(fact_choices)} choices for dropdown")
-        for i, choice in enumerate(fact_choices):
-            self.debug_print(f"  Choice {i}: '{choice}'")
-        
+        try:
+            repo_rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
+            self.debug_print(f"Retrieved {len(repo_rejected_facts)} rejected facts from repository.")
+            for i, fact in enumerate(repo_rejected_facts):
+                if not isinstance(fact, dict):
+                    self.debug_print(f"  Skipping non-dict rejected repo fact at index {i}: {fact}")
+                    continue
+
+                fact_id = self._generate_persistent_id(fact)
+                fact['id'] = fact_id
+
+                if fact_id in processed_fact_ids:
+                    self.debug_print(f"  Skipping duplicate rejected repo fact ID {fact_id}.")
+                    continue
+
+                # Add filename if missing
+                if "filename" not in fact:
+                     fact["filename"] = fact.get("document_name", "Unknown Document")
+
+                all_facts.append(fact)
+                processed_fact_ids.add(fact_id)
+
+                statement = fact.get("statement", "")
+                if not isinstance(statement, str):
+                    statement = str(statement) if statement is not None else ""
+                preview = statement[:40] + "..." if len(statement) > 40 else statement
+                doc_name = fact.get("document_name", "Repo")
+                choice_text = f"❌ {preview} ({doc_name})"
+                fact_choices.append((choice_text, fact_id))
+                self.debug_print(f"  Added rejected repo choice: '{choice_text}' with ID {fact_id}")
+        except Exception as e:
+            self.debug_print(f"Error retrieving rejected facts from repository: {e}")
+
+        # Sort choices for better readability in the dropdown
+        # Sort by text part of the tuple (choice_text)
+        fact_choices.sort(key=lambda x: x[0])
+
+        self.debug_print(f"get_facts_for_review finished. Total unique facts: {len(all_facts)}, Total choices: {len(fact_choices)}")
+        # Return the list of unique fact dictionaries and the formatted choices for the dropdown
         return all_facts, fact_choices
     
     def load_fact_for_review(self, fact_index):
@@ -1520,15 +1557,19 @@ class FactExtractionGUI:
                     with gr.Row():
                         # Left column for fact selection
                         with gr.Column(scale=1):
+                            # Get initial facts for the dropdown
+                            _, initial_fact_choices = self.get_facts_for_review()
+                            self.debug_print(f"Loaded {len(initial_fact_choices)} initial choices for fact selector")
+                            
                             fact_selector = gr.Dropdown(
                                 label="Select Fact to Review",
-                                choices=[],
+                                choices=initial_fact_choices,  # Initialize with loaded facts
                                 value=None,  # Set initial value to None
                                 type="index",  # Changed to index type for more reliable selection
                                 interactive=True,
                                 allow_custom_value=False  # Don't allow custom values
                             )
-                            self.debug_print("Created fact_selector dropdown")
+                            self.debug_print("Created fact_selector dropdown with initial choices")
                             
                             refresh_facts_btn = gr.Button("Refresh Facts List")
                             self.debug_print("Created refresh_facts_btn")
@@ -2186,53 +2227,46 @@ class FactExtractionGUI:
         return interface
     
     def refresh_facts_data(self):
-        """Refresh the facts data from repositories."""
-        self.debug_print("refresh_facts_data called")
+        """Load facts from both the verified and rejected repositories into memory."""
+        self.debug_print("Refreshing facts data from both repositories")
         
-        # First, force repositories to reload fresh data from Excel files
-        self.fact_repo._reload_facts_from_excel()
-        self.rejected_fact_repo._reload_facts_from_excel()
-        
-        # Clear existing facts data
-        self.facts_data = {}
-        
-        # Load all facts from the repository
-        verified_facts = self.fact_repo.get_all_facts(verified_only=True)
-        all_facts = self.fact_repo.get_all_facts(verified_only=False)
-        rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
-        
-        self.debug_print(f"Loaded {len(verified_facts)} verified facts")
-        self.debug_print(f"Loaded {len(all_facts)} total facts")
-        self.debug_print(f"Loaded {len(rejected_facts)} rejected facts")
-        
-        # Group facts by document name
-        documents = set()
-        for fact in all_facts + rejected_facts:
-            doc_name = fact.get("document_name", "Unknown Document")
-            documents.add(doc_name)
-        
-        # Create facts data structure
-        for doc_name in documents:
-            doc_verified = [f for f in verified_facts if f.get("document_name") == doc_name]
-            doc_all = [f for f in all_facts if f.get("document_name") == doc_name]
-            doc_rejected = [f for f in rejected_facts if f.get("document_name") == doc_name]
+        try:
+            # Get all verified facts from fact_repo
+            verified_facts = self.fact_repo.get_all_facts(verified_only=True)
+            self.debug_print(f"Loaded {len(verified_facts)} verified facts from repository")
             
-            # Filter out any facts with NaN or empty statements
-            doc_verified = [f for f in doc_verified if f.get("statement") and not pd.isna(f.get("statement"))]
-            doc_all = [f for f in doc_all if f.get("statement") and not pd.isna(f.get("statement"))]
-            doc_rejected = [f for f in doc_rejected if f.get("statement") and not pd.isna(f.get("statement"))]
+            # Get all rejected facts from rejected_fact_repo
+            rejected_facts = self.rejected_fact_repo.get_all_rejected_facts()
+            self.debug_print(f"Loaded {len(rejected_facts)} rejected facts from repository")
             
-            self.facts_data[doc_name] = {
-                "all_facts": doc_all + doc_rejected,
-                "verified_facts": doc_verified,
-                "total_facts": len(doc_all) + len(doc_rejected),
-                "verified_count": len(doc_verified),
-                "errors": []
-            }
-        
-        self.debug_print(f"Refreshed facts data for {len(self.facts_data)} documents")
-        
-        return self.facts_data
+            # Store facts by document name
+            facts_by_document = {}
+            
+            # Process verified facts
+            for fact in verified_facts:
+                doc_name = fact.get("document_name", "Unknown Document")
+                if doc_name not in facts_by_document:
+                    facts_by_document[doc_name] = []
+                facts_by_document[doc_name].append(fact)
+            
+            # Process rejected facts
+            for fact in rejected_facts:
+                doc_name = fact.get("document_name", "Unknown Document")
+                if doc_name not in facts_by_document:
+                    facts_by_document[doc_name] = []
+                facts_by_document[doc_name].append(fact)
+            
+            # Update the facts_data dictionary
+            self.facts_data = facts_by_document
+            
+            # Log the total count
+            total_facts = sum(len(facts) for facts in facts_by_document.values())
+            self.debug_print(f"Total facts loaded: {total_facts} from {len(facts_by_document)} documents")
+            
+        except Exception as e:
+            import traceback
+            self.debug_print(f"Error refreshing facts data: {str(e)}\n{traceback.format_exc()}")
+            # Keep the current facts_data to avoid losing data on error
 
 def create_app():
     """Create and configure the Gradio app."""
