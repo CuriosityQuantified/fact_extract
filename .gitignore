@@ -1,48 +1,84 @@
-# Ignore data files
-data/*.xlsx
-!data/.gitkeep
-
-# Ignore Excel files at root level
-/*.xlsx
-processed_chunks.xlsx
-unprocessed_chunks.xlsx
-facts.xlsx
-
-# Ignore log files
-*.log
-debug_output.log
-app_debug.log
-
-# Ignore accidental duplicate directories
-src/src/
-
-# Python cache files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 *.egg-info/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.venv
 venv/
 ENV/
+.DS_Store
 
-# Environment variables
-.env
+# Cursor config files
+.cursor/
 
-# Testing
-test_data/
-.pytest_cache/
+# Project-specific
+*.xlsx
+*.xls
+*.csv
 
-# IDE specific files
-.idea/
-.vscode/
+# Excel and data files
+data/*.xlsx
+data/*.xls
+data/*.csv
+src/data/*.xlsx
+src/data/*.xls
+src/data/*.csv
+
+# ChromaDB files
+src/data/embeddings/**/data_level*.bin
+src/data/embeddings/**/header.bin
+src/data/embeddings/**/length.bin
+src/data/embeddings/**/link_lists.bin
+src/data/embeddings/*.sqlite3
+
+# Other temporary files
 *.swp
 *.swo
+.idea/
+.vscode/
+*.bak
+temp_*
 
-# Other
-commit_message.txt
-commit_msg.txt
+# Keep gitkeep files
+!.gitkeep
