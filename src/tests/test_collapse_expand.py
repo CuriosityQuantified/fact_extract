@@ -9,15 +9,17 @@ import pytest
 import uuid
 import re
 from unittest.mock import Mock, patch, MagicMock
-
-
-# Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from bs4 import BeautifulSoup
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from gui.app import FactExtractionGUI
-from tests.test_gui_toggle import format_facts_for_display
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+# Import from src.tests instead of relative import 
+from src.tests.test_gui_toggle import format_facts_for_display
+
+from src.gui.app import FactExtractionGUI, create_message
+from src.storage.fact_repository import FactRepository
+from src.storage.chunk_repository import ChunkRepository
 
 def extract_script(html_content):
     """Extract the JavaScript script from HTML content."""

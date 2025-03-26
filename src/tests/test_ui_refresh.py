@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
@@ -25,12 +25,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState
 
 @pytest.fixture
 def setup_test_repositories():
@@ -154,9 +154,9 @@ async def test_on_refresh_facts_button(setup_test_repositories, create_sample_fa
     chunk_repo, fact_repo, rejected_fact_repo = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         
@@ -204,9 +204,9 @@ async def test_fact_count_in_tabs(setup_test_repositories, create_sample_facts):
     chunk_repo, fact_repo, rejected_fact_repo = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         
@@ -245,9 +245,9 @@ async def test_update_facts_display(setup_test_repositories, create_sample_facts
     chunk_repo, fact_repo, rejected_fact_repo = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         

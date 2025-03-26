@@ -11,14 +11,14 @@ import pytest
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from langchain_openai import ChatOpenAI
-from utils.synthetic_data import SYNTHETIC_ARTICLE, SYNTHETIC_ARTICLE_2
-from agents.verification import FactVerificationAgent, VerificationResult
-from storage.fact_repository import FactRepository
+from src.llm_config import get_llm
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE, SYNTHETIC_ARTICLE_2
+from src.agents.verification import FactVerificationAgent, VerificationResult
+from src.storage.fact_repository import FactRepository
 
 # Configure logging
 logging.basicConfig(
@@ -33,8 +33,8 @@ async def test_verification_exact_match():
     print("\nInitializing FactVerificationAgent for exact match test...")
     sys.stdout.flush()
     
-    # Initialize the language model
-    llm = ChatOpenAI(temperature=0, model="gpt-4o")
+    # Initialize the language model using llm_config
+    llm = get_llm(temperature=0)
     
     verifier = FactVerificationAgent(llm=llm)
     print("FactVerificationAgent initialized successfully")
@@ -67,8 +67,8 @@ async def test_verification_paraphrase():
     print("\nInitializing FactVerificationAgent for paraphrase test...")
     sys.stdout.flush()
     
-    # Initialize the language model
-    llm = ChatOpenAI(temperature=0, model="gpt-4o")
+    # Initialize the language model using llm_config
+    llm = get_llm(temperature=0)
     
     verifier = FactVerificationAgent(llm=llm)
     print("FactVerificationAgent initialized successfully")
@@ -101,8 +101,8 @@ async def test_verification_incorrect():
     print("\nInitializing FactVerificationAgent for incorrect fact test...")
     sys.stdout.flush()
     
-    # Initialize the language model
-    llm = ChatOpenAI(temperature=0, model="gpt-4o")
+    # Initialize the language model using llm_config
+    llm = get_llm(temperature=0)
     
     verifier = FactVerificationAgent(llm=llm)
     print("FactVerificationAgent initialized successfully")

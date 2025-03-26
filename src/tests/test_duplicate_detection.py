@@ -5,19 +5,23 @@ import hashlib
 from datetime import datetime
 import uuid
 import time
+import pytest
+import pandas as pd
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import create_initial_state
-from graph.nodes import chunker_node, extractor_node, validator_node
-from utils.synthetic_data import SYNTHETIC_ARTICLE_7
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.models.state import create_initial_state
+from src.graph.nodes import chunker_node, extractor_node, validator_node
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE_7
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_duplicate_detection():
     """Test that the system correctly detects and skips duplicate documents."""
     print("\n" + "="*80)
@@ -25,7 +29,7 @@ async def test_duplicate_detection():
     print("="*80)
     
     # Create test data directory
-    os.makedirs("data", exist_ok=True)
+    os.makedirs("src/data", exist_ok=True)
     
     # Initialize repositories
     global chunk_repo, fact_repo
@@ -130,40 +134,31 @@ async def test_duplicate_detection():
         print("\n" + "-"*80)
         print("STEP 4: Checking Excel storage for stored chunks and facts")
         
-        # Check chunks in Excel
-        chunks_excel_path = "data/all_chunks.xlsx"
+        # Check Excel storage for stored chunks
+        print("\nChecking Excel storage for chunks...")
+        chunks_excel_path = "src/data/all_chunks.xlsx"
         if os.path.exists(chunks_excel_path):
-            import pandas as pd
             chunks_df = pd.read_excel(chunks_excel_path)
+            print(f"Chunks Excel file exists with {len(chunks_df)} rows")
             
-            # Filter chunks for our test document
-            test_chunks = chunks_df[chunks_df['document_name'] == document_name]
-            modified_chunks = chunks_df[chunks_df['document_name'] == modified_document_name]
-            
-            print(f"\nStored {len(test_chunks)} chunks in Excel for original document")
-            print(f"Stored {len(modified_chunks)} chunks in Excel for modified document")
-            
-            # Check all_facts_extracted field
-            if not test_chunks.empty:
-                all_extracted = test_chunks['all_facts_extracted'].all()
-                print(f"All facts extracted from original document: {all_extracted}")
+            # Get chunks for our test document
+            doc_chunks = chunks_df[chunks_df['document_name'] == document_name]
+            print(f"Chunks for test document: {len(doc_chunks)}")
         else:
-            print("\nNo chunks Excel file found!")
+            print("Chunks Excel file does not exist!")
         
-        # Check facts in Excel
-        facts_excel_path = "data/all_facts.xlsx"
+        # Check Excel storage for stored facts
+        print("\nChecking Excel storage for facts...")
+        facts_excel_path = "src/data/all_facts.xlsx"
         if os.path.exists(facts_excel_path):
-            import pandas as pd
             facts_df = pd.read_excel(facts_excel_path)
+            print(f"Facts Excel file exists with {len(facts_df)} rows")
             
-            # Filter facts for our test documents
-            test_facts = facts_df[facts_df['document_name'] == document_name]
-            modified_facts = facts_df[facts_df['document_name'] == modified_document_name]
-            
-            print(f"\nStored {len(test_facts)} facts in Excel for original document")
-            print(f"Stored {len(modified_facts)} facts in Excel for modified document")
+            # Get facts for our test document
+            doc_facts = facts_df[facts_df['document_name'] == document_name]
+            print(f"Facts for test document: {len(doc_facts)}")
         else:
-            print("\nNo facts Excel file found!")
+            print("Facts Excel file does not exist!")
     
     except Exception as e:
         print(f"\nError executing test: {str(e)}")

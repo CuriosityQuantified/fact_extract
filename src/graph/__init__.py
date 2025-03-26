@@ -2,6 +2,22 @@
 Graph package for fact extraction workflow.
 """
 
-from graph.nodes import process_document
+# Import and export the node functions directly
+from src.graph.nodes import (
+    process_document,
+    chunker_node,
+    extractor_node,
+    validator_node,
+    create_workflow,
+    parallel_process_chunks
+)
 
-__all__ = ['process_document'] 
+# Explicitly set __all__ to define what gets imported with "from src.graph import *"
+__all__ = [
+    'process_document',
+    'chunker_node',
+    'extractor_node',
+    'validator_node',
+    'create_workflow',
+    'parallel_process_chunks'
+] 

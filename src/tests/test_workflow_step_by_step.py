@@ -4,19 +4,25 @@ import os
 import hashlib
 from datetime import datetime
 import uuid
+import pytest
+import pandas as pd
+from pathlib import Path
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import create_initial_state
-from graph.nodes import chunker_node, extractor_node, validator_node
-from utils.synthetic_data import SYNTHETIC_ARTICLE_7
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.models.state import create_initial_state
+from src.graph.nodes import chunker_node, extractor_node, validator_node
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE_7
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
+@pytest.mark.asyncio
 async def test_workflow_step_by_step():
     """Test the fact extraction workflow step by step with SYNTHETIC_ARTICLE_7."""
     print("\n" + "="*80)
@@ -24,7 +30,7 @@ async def test_workflow_step_by_step():
     print("="*80)
     
     # Create test data directory
-    os.makedirs("src/fact_extract/data", exist_ok=True)
+    os.makedirs("src/data", exist_ok=True)
     
     # Create a unique document name
     unique_id = str(uuid.uuid4())[:8]
@@ -111,19 +117,21 @@ async def test_workflow_step_by_step():
             print(f"Status: {fact['verification_status']}")
             print(f"Reason: {fact.get('verification_reason', 'Not provided')}")
         
-        # Check if facts were stored in Excel
-        print("\nVerifying Excel storage...")
-        facts_excel_path = "data/all_facts.xlsx"
+        # Check Excel storage (should have stored the fact)
+        print("\nChecking Excel storage...")
+        facts_excel_path = "src/data/all_facts.xlsx"
         if os.path.exists(facts_excel_path):
-            import pandas as pd
             facts_df = pd.read_excel(facts_excel_path)
+            doc_facts = facts_df[facts_df['document_name'] == document_name]
+            print(f"Facts for test document: {len(doc_facts)}")
             
-            # Filter facts for our test document
-            test_facts = facts_df[facts_df['document_name'] == document_name]
-            
-            print(f"\nStored {len(test_facts)} facts in Excel for document {document_name}")
+            if len(doc_facts) > 0:
+                print("\nFACTS:")
+                for i, fact in doc_facts.iterrows():
+                    print(f"  {i+1}. {fact.get('statement', 'No statement')[:100]}")
+                    print(f"     Verified: {fact.get('verification_status', 'Unknown')}")
         else:
-            print("\nNo facts Excel file found!")
+            print("Facts Excel file does not exist!")
     
     except Exception as e:
         print(f"\nError executing workflow: {str(e)}")

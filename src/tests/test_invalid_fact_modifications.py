@@ -15,17 +15,17 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState
 
 @pytest.fixture
 def setup_test_repositories():

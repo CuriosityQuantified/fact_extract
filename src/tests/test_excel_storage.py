@@ -9,17 +9,20 @@ import pandas as pd
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 from langchain_core.messages import AIMessage
+import pytest
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import ProcessingState, create_initial_state
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.models.state import ProcessingState, create_initial_state
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_excel_storage():
     """Test Excel storage implementation."""
     print("\n" + "="*80)
@@ -27,7 +30,7 @@ async def test_excel_storage():
     print("="*80)
     
     # Create data directory if it doesn't exist
-    os.makedirs("data", exist_ok=True)
+    os.makedirs("src/data", exist_ok=True)
     
     # Initialize repositories directly
     chunk_repo = ChunkRepository()
@@ -79,7 +82,7 @@ async def test_excel_storage():
     print("\nChecking Excel files...")
     
     # Check chunks Excel
-    chunks_excel_path = "data/all_chunks.xlsx"
+    chunks_excel_path = "src/data/all_chunks.xlsx"
     if os.path.exists(chunks_excel_path):
         chunks_df = pd.read_excel(chunks_excel_path)
         print(f"\nChunks Excel file exists with {len(chunks_df)} rows")
@@ -90,7 +93,7 @@ async def test_excel_storage():
         print("Chunks Excel file does not exist!")
     
     # Check facts Excel
-    facts_excel_path = "data/all_facts.xlsx"
+    facts_excel_path = "src/data/all_facts.xlsx"
     if os.path.exists(facts_excel_path):
         facts_df = pd.read_excel(facts_excel_path)
         print(f"\nFacts Excel file exists with {len(facts_df)} rows")

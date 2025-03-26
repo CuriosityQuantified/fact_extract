@@ -15,21 +15,23 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState
-from utils.file_utils import extract_text_from_file
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState
+from src.utils.file_utils import extract_text_from_file
 
 # Import workflow components for mocking
-from graph.nodes import chunker_node, extractor_node, validator_node
+from src.graph.nodes import chunker_node, extractor_node, validator_node
+
+from src import process_document
 
 @pytest.fixture
 def setup_test_repositories():
@@ -105,10 +107,10 @@ def unicode_text_file(tmp_path):
 @pytest.fixture
 def mock_workflow():
     """Create mocks for the workflow components."""
-    with patch('src.fact_extract.graph.nodes.chunker_node') as mock_chunker, \
-         patch('src.fact_extract.graph.nodes.extractor_node') as mock_extractor, \
-         patch('src.fact_extract.graph.nodes.validator_node') as mock_validator, \
-         patch('src.fact_extract.graph.nodes.create_workflow') as mock_create_workflow:
+    with patch('src.graph.nodes.chunker_node') as mock_chunker, \
+         patch('src.graph.nodes.extractor_node') as mock_extractor, \
+         patch('src.graph.nodes.validator_node') as mock_validator, \
+         patch('src.graph.nodes.create_workflow') as mock_create_workflow:
         
         # Configure the mock chunker
         async def mock_chunker_func(state):
@@ -224,13 +226,10 @@ async def test_unicode_in_chunks(setup_test_repositories, unicode_text_file, moc
     }
     
     # Run mocked workflow
-    with patch('src.fact_extract.graph.nodes.create_workflow', return_value=mock_workflow["create_workflow"]), \
-         patch('src.fact_extract.storage.chunk_repository.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.storage.fact_repository.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo):
-        
-        # Import here to use the patched functions
-        from src.fact_extract import process_document
+    with patch('src.graph.nodes.create_workflow', return_value=mock_workflow["create_workflow"]), \
+         patch('src.storage.chunk_repository.ChunkRepository', return_value=chunk_repo), \
+         patch('src.storage.fact_repository.FactRepository', return_value=fact_repo), \
+         patch('src.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo):
         
         # Process the document
         result = await process_document(unicode_text_file)
@@ -276,10 +275,10 @@ async def test_gui_unicode_processing(setup_test_repositories, unicode_text_file
     mock_file = MockFile(unicode_text_file)
     
     # Patch necessary components for GUI testing
-    with patch('src.fact_extract.graph.nodes.create_workflow', return_value=mock_workflow["create_workflow"]), \
-         patch('src.fact_extract.storage.chunk_repository.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.storage.fact_repository.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo), \
+    with patch('src.graph.nodes.create_workflow', return_value=mock_workflow["create_workflow"]), \
+         patch('src.storage.chunk_repository.ChunkRepository', return_value=chunk_repo), \
+         patch('src.storage.fact_repository.FactRepository', return_value=fact_repo), \
+         patch('src.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo), \
          patch('shutil.copy'):
         
         # Process the file through GUI

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
@@ -31,17 +31,17 @@ mock_modules = {
     'langchain_openai': Mock(),
     'langchain_openai.chat_models': Mock(),
     'langchain_core.language_models.chat_models': Mock(),
-    'fact_extract.tools.submission': mock_submission,
-    'fact_extract.graph.nodes': mock_nodes
+    'src.tools.submission': mock_submission,
+    'src.graph.nodes': mock_nodes
 }
 
 for mod_name, mock_mod in mock_modules.items():
     sys.modules[mod_name] = mock_mod
 
 # Now import the modules that use these dependencies
-from gui.app import FactExtractionGUI, format_file_types, format_size_limits
-from utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZES
-from models.state import ProcessingState
+from src.gui.app import FactExtractionGUI, format_file_types, format_size_limits
+from src.utils.file_utils import ALLOWED_EXTENSIONS, MAX_FILE_SIZES
+from src.models.state import ProcessingState
 
 @pytest.fixture
 def gui():
@@ -77,7 +77,7 @@ def test_format_size_limits():
 
 def test_gui_initialization(gui):
     """Test GUI instance initialization."""
-    assert isinstance(gui.state, ProcessingState)
+    assert isinstance(gui.processing_state, ProcessingState)
     assert gui.processing is False
     assert isinstance(gui.theme, gr.themes.Soft)
     assert gui.temp_files == []

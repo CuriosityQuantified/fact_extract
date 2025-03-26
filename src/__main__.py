@@ -9,12 +9,12 @@ from typing import List, Dict
 from datetime import datetime
 from pathlib import Path
 
-from utils.config import load_config
-from graph.nodes import create_workflow
-from models.state import create_initial_state
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
-from utils.synthetic_data import *
+from src.utils.config import load_config
+from src.graph.nodes import create_workflow
+from src.models.state import create_initial_state
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
+from src.utils.synthetic_data import *
 
 # Configure logging
 logging.basicConfig(

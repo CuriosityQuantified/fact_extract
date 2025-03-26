@@ -17,11 +17,11 @@ import csv
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from utils.document_processors import (
+from src.utils.document_processors import (
     DocumentProcessorFactory,
     ExcelProcessor,
     WordProcessor,

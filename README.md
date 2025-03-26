@@ -20,6 +20,78 @@ A robust document processing system that extracts content from various document 
 - Excel-based storage for chunks and facts
 - Duplicate detection for documents and facts
 
+## Parallel Processing
+
+The system now features parallel chunk processing that significantly improves performance for large documents:
+
+### Key Benefits
+
+- **Faster Processing**: Process multiple document chunks simultaneously
+- **Configurable Parallelism**: Adjust the number of concurrent workers based on your system's capabilities
+- **Efficient Resource Usage**: Optimized for I/O-bound operations with asyncio
+- **Graceful Error Handling**: Individual chunk failures don't affect the entire process
+- **Thread-Safe Operations**: Robust synchronization for shared resources
+
+### Configuration
+
+You can configure parallel processing settings using:
+
+1. **Environment Variables**:
+   ```bash
+   # Set maximum concurrent chunks
+   export MAX_CONCURRENT_CHUNKS=8
+   
+   # Configure chunk size settings
+   export CHUNK_SIZE=3000
+   export CHUNK_OVERLAP=200
+   
+   # Set API rate limiting
+   export MAX_REQUESTS_PER_MINUTE=60
+   ```
+
+2. **Configuration File**:
+   The `src/config.py` file contains all configuration options with reasonable defaults:
+   ```python
+   # Default parallelism settings
+   DEFAULT_SETTINGS = {
+       "max_concurrent_chunks": 5,
+       "max_requests_per_minute": 60,
+       "chunk_size": 3000,
+       "chunk_overlap": 200,
+       # ...
+   }
+   ```
+
+### Performance Benchmarking
+
+To determine the optimal parallelism level for your system, run the included benchmark tool:
+
+```bash
+# Run benchmark with default concurrency levels (1, 2, 4, 8, 16)
+venv/bin/python -m src.benchmarks your_large_document.pdf
+
+# Test specific concurrency levels
+venv/bin/python -m src.benchmarks your_large_document.pdf --levels 1 3 5 7
+
+# Save benchmark results to a specific file
+venv/bin/python -m src.benchmarks your_large_document.pdf --output results.png
+```
+
+The benchmark tool:
+- Tests different concurrency levels
+- Measures processing time for each level
+- Calculates speedup compared to sequential processing
+- Generates a plot showing performance metrics
+- Recommends the optimal concurrency level for your system
+
+### Implementation Details
+
+- Uses asyncio for lightweight concurrent processing
+- Implements semaphore-based concurrency limiting
+- Ensures thread-safe repository access with locks
+- Manages chunk queues efficiently
+- Provides detailed progress tracking
+
 ## Installation
 
 ```bash

@@ -30,10 +30,23 @@ logger = logging.getLogger("fact_repository")
 fact_repo_lock = threading.RLock()
 rejected_fact_repo_lock = threading.RLock()
 
+# Import vector store
+from search.vector_store import ChromaFactStore
+
 class FactRepository:
     """Repository for storing and managing facts with Excel persistence."""
     
-    def __init__(self, excel_path: str = "data/all_facts.xlsx"):
+    def __init__(self, excel_path: str = "data/all_facts.xlsx", 
+                 vector_store_dir: str = "src/data/embeddings",
+                 collection_name: str = "fact_embeddings"):
+        """
+        Initialize the FactRepository with both Excel and vector store capabilities.
+        
+        Args:
+            excel_path: Path to the Excel file for storing facts
+            vector_store_dir: Directory to store ChromaDB files
+            collection_name: Name of the ChromaDB collection to use
+        """
         self.facts: Dict[str, List[Dict[str, Any]]] = {}
         self.excel_path = excel_path
         # Valid status values
@@ -42,10 +55,16 @@ class FactRepository:
         # Create data directory if it doesn't exist
         os.makedirs(os.path.dirname(self.excel_path), exist_ok=True)
         
+        # Initialize the vector store for semantic search
+        self.vector_store = ChromaFactStore(
+            persist_directory=vector_store_dir,
+            collection_name="fact_embeddings_new"  # Use the new collection created by populate_vector_store.py
+        )
+        
         # Load existing facts from Excel if file exists
         self._load_from_excel()
         
-        logger.info(f"Initialized FactRepository with path: {self.excel_path}")
+        logger.info(f"Initialized FactRepository with Excel path: {self.excel_path} and vector store in {vector_store_dir}")
         
     def _load_from_excel(self) -> None:
         """Load facts from Excel file if it exists."""
@@ -300,61 +319,66 @@ class FactRepository:
         
         return False
         
-    def store_fact(self, fact_data: Dict[str, Any]) -> None:
+    def store_fact(self, fact_data: Dict[str, Any]) -> str:
         """
-        Store a fact in the repository.
+        Store a fact in both Excel and the vector database.
         
         Args:
-            fact_data: Dictionary containing fact information
+            fact_data: Dictionary containing fact data
+            
+        Returns:
+            String ID of the stored fact
         """
-        logger.info(f"store_fact called with statement: {fact_data.get('statement', '')[:40]}...")
-        logger.info(f"Status: {fact_data.get('verification_status', 'None')}")
+        # Generate a unique ID for the fact
+        fact_id = self._generate_fact_id(fact_data)
         
-        with fact_repo_lock:  # Use lock to prevent concurrent modifications
-            # Check for required fields
-            if "statement" not in fact_data:
-                logger.error("Error: Fact data missing 'statement' field")
-                return
-                
-            if "document_name" not in fact_data:
-                logger.error("Error: Fact data missing 'document_name' field")
-                return
-                
-            document_name = fact_data["document_name"]
+        # Check for duplicates
+        fact_hash = self._generate_fact_hash(fact_data)
+        if self._is_duplicate_fact(fact_hash):
+            logger.info(f"Duplicate fact detected, skipping: {fact_data.get('statement', '')[:30]}...")
+            return fact_id
+        
+        # Store in Excel (existing implementation)
+        document_name = fact_data.get("document_name", "")
+        if document_name not in self.facts:
+            self.facts[document_name] = []
             
-            # Check if this is a duplicate fact - skip the check if explicitly updating a fact
-            if not fact_data.get("edited", False) and self.is_duplicate_fact(fact_data):
-                logger.info(f"Duplicate fact detected, not storing: {fact_data.get('statement', '')[:40]}...")
-                return
+        self.facts[document_name].append(fact_data)
+        
+        # Save to Excel
+        self._save_to_excel()
+        
+        # Additionally, store in vector database
+        try:
+            # Create metadata for the vector store
+            metadata = {
+                "document_name": fact_data.get("document_name", ""),
+                "chunk_index": fact_data.get("chunk_index", 0),
+                "source": fact_data.get("source_name", ""),
+                "extracted_at": str(datetime.now()),
+                "fact_hash": fact_hash,
+                "verification_status": fact_data.get("verification_status", "pending")
+            }
             
-            if document_name not in self.facts:
-                self.facts[document_name] = []
-                logger.info(f"Created new document entry: {document_name}")
-                
-            # Add timestamp if not present
-            if "timestamp" not in fact_data:
-                fact_data["timestamp"] = datetime.now().isoformat()
-                
-            # Ensure the statement is preserved
-            original_statement = fact_data.get("statement", "")
+            # Add any additional metadata fields
+            if "metadata" in fact_data and isinstance(fact_data["metadata"], dict):
+                for key, value in fact_data["metadata"].items():
+                    if key not in metadata:  # Don't overwrite existing fields
+                        metadata[key] = value
             
-            # Add the fact to the repository
-            self.facts[document_name].append(fact_data)
-            
-            # Verify the statement wasn't changed
-            stored_fact = self.facts[document_name][-1]
-            if stored_fact.get("statement", "") != original_statement:
-                logger.warning(f"Statement changed during storage!")
-                logger.warning(f"  Original: {original_statement[:40]}...")
-                logger.warning(f"  Stored: {stored_fact.get('statement', '')[:40]}...")
-                # Fix the statement if it was changed
-                stored_fact["statement"] = original_statement
-            
-            logger.info(f"Stored fact: {original_statement[:40]}... in document: {document_name}")
-            logger.info(f"Current fact count for document {document_name}: {len(self.facts[document_name])}")
-            
-            # Save changes to Excel immediately
-            self._save_to_excel()
+            # Add to vector store
+            self.vector_store.add_fact(
+                fact_id=fact_id,
+                statement=fact_data.get("statement", ""),
+                metadata=metadata
+            )
+            logger.info(f"Fact {fact_id} added to vector store")
+        except Exception as e:
+            logger.error(f"Error adding fact to vector store: {e}")
+            logger.error(traceback.format_exc())
+            # Still return the ID since it was stored in Excel
+        
+        return fact_id
     
     def get_facts(
         self,
@@ -437,89 +461,187 @@ class FactRepository:
         """
         return self.get_facts(document_name, verified_only)
     
-    def remove_fact(
-        self, 
-        document_name: str, 
-        statement: str, 
-        remove_all: bool = False
-    ) -> bool:
+    def remove_fact(self, document_name: str, statement: str, remove_all: bool = False) -> bool:
         """
-        Remove a fact from the repository.
+        Remove a fact from both Excel and vector store.
         
         Args:
-            document_name: Name of the document
-            statement: The statement to remove
-            remove_all: Remove all instances of the statement
+            document_name: The name of the document containing the fact
+            statement: The statement text to remove
+            remove_all: If True, remove all instances of the statement, otherwise just the first
             
         Returns:
-            bool: True if any facts were removed
+            True if the fact was removed, False otherwise
         """
-        if document_name not in self.facts:
-            return False
-            
-        found = False
-        for i in range(len(self.facts[document_name]) - 1, -1, -1):
-            fact = self.facts[document_name][i]
-            if fact.get("statement", "") == statement:
-                self.facts[document_name].pop(i)
-                found = True
-                print(f"Removed fact: {statement[:40]}...")
-                if not remove_all:
-                    break
-                    
-        if found:
-            # Save changes to Excel
-            self._save_to_excel()
-        
-        return found
-            
-    def update_fact(
-        self,
-        document_name: str,
-        old_statement: str,
-        new_data: Dict[str, Any]
-    ) -> bool:
-        """
-        Update a fact with new data.
-        
-        Args:
-            document_name: Name of the document containing the fact
-            old_statement: The original statement to find the fact
-            new_data: New data to update the fact with
-            
-        Returns:
-            bool: True if the fact was updated, False otherwise
-        """
-        with fact_repo_lock:  # Use lock to prevent concurrent modifications
-            if document_name not in self.facts:
-                logger.warning(f"Document {document_name} not found in facts")
-                return False
+        with fact_repo_lock:
+            try:
+                # Remove from Excel (existing implementation)
+                if document_name not in self.facts:
+                    logger.warning(f"Document {document_name} not found in repository")
+                    return False
                 
-            if not old_statement:
-                logger.warning("Empty old_statement provided to update_fact")
-                return False
+                # First, generate fact IDs for facts to be removed
+                facts_to_remove = []
+                indices_to_remove = []
                 
-            found = False
-            for fact in self.facts[document_name]:
-                if fact.get("statement", "") == old_statement:
-                    logger.info(f"Updating fact: {old_statement[:40]}...")
-                    # Update fact with new data
-                    for key, value in new_data.items():
-                        fact[key] = value
+                for i, fact in enumerate(self.facts[document_name]):
+                    if fact.get("statement", "") == statement:
+                        # Generate the fact ID
+                        fact_id = self._generate_fact_id(fact)
+                        facts_to_remove.append(fact_id)
+                        indices_to_remove.append(i)
                         
-                    # Mark as edited to skip duplicate checks on save
-                    fact["edited"] = True
-                    
-                    found = True
-                    break
-            
-            if found:
+                        # If not removing all, just remove the first one
+                        if not remove_all:
+                            break
+                
+                # If no facts found with this statement
+                if not indices_to_remove:
+                    logger.warning(f"No facts found with statement: {statement}")
+                    return False
+                
+                # Remove from the list in reverse order to maintain correct indices
+                for index in sorted(indices_to_remove, reverse=True):
+                    self.facts[document_name].pop(index)
+                
                 # Save changes to Excel
                 self._save_to_excel()
-                logger.info(f"Fact updated successfully: {old_statement[:40]}...")
                 
-            return found
+                # Remove from vector store
+                for fact_id in facts_to_remove:
+                    try:
+                        self.vector_store.delete_fact(fact_id)
+                        logger.info(f"Removed fact {fact_id} from vector store")
+                    except Exception as e:
+                        logger.error(f"Error removing fact {fact_id} from vector store: {e}")
+                
+                return True
+            except Exception as e:
+                logger.error(f"Error removing fact: {e}")
+                logger.error(traceback.format_exc())
+                return False
             
+    def update_fact(self, document_name: str, old_statement: str, new_data: Dict[str, Any]) -> bool:
+        """
+        Update a fact in both Excel and vector store.
+        
+        Args:
+            document_name: The name of the document containing the fact
+            old_statement: The current statement text to update
+            new_data: New data for the fact
+            
+        Returns:
+            True if the fact was updated, False otherwise
+        """
+        with fact_repo_lock:
+            try:
+                # First, find the fact to update
+                if document_name not in self.facts:
+                    logger.warning(f"Document {document_name} not found in repository")
+                    return False
+                
+                fact_found = False
+                old_fact = None
+                
+                for i, fact in enumerate(self.facts[document_name]):
+                    if fact.get("statement", "") == old_statement:
+                        # Generate the old fact ID for vector store removal
+                        old_fact_id = self._generate_fact_id(fact)
+                        old_fact = copy.deepcopy(fact)  # Keep a copy of the old fact
+                        
+                        # Update the fact in Excel storage
+                        for key, value in new_data.items():
+                            self.facts[document_name][i][key] = value
+                        
+                        fact_found = True
+                        break
+                
+                if not fact_found:
+                    logger.warning(f"No fact found with statement: {old_statement}")
+                    return False
+                
+                # Save changes to Excel
+                self._save_to_excel()
+                
+                # Update in vector store (delete old, add new)
+                try:
+                    # Delete the old fact from vector store
+                    self.vector_store.delete_fact(old_fact_id)
+                    
+                    # Create a new fact with updated data for vector store
+                    updated_fact = old_fact.copy()
+                    for key, value in new_data.items():
+                        updated_fact[key] = value
+                    
+                    # Generate new fact ID
+                    new_fact_id = self._generate_fact_id(updated_fact)
+                    
+                    # Create metadata for the vector store
+                    metadata = {
+                        "document_name": updated_fact.get("document_name", ""),
+                        "chunk_index": updated_fact.get("chunk_index", 0),
+                        "source": updated_fact.get("source_name", ""),
+                        "extracted_at": str(datetime.now()),
+                        "fact_hash": self._generate_fact_hash(updated_fact),
+                        "verification_status": updated_fact.get("verification_status", "pending")
+                    }
+                    
+                    # Add to vector store
+                    self.vector_store.add_fact(
+                        fact_id=new_fact_id,
+                        statement=updated_fact.get("statement", ""),
+                        metadata=metadata
+                    )
+                    logger.info(f"Updated fact {old_fact_id} to {new_fact_id} in vector store")
+                except Exception as e:
+                    logger.error(f"Error updating fact in vector store: {e}")
+                    logger.error(traceback.format_exc())
+                
+                return True
+            except Exception as e:
+                logger.error(f"Error updating fact: {e}")
+                logger.error(traceback.format_exc())
+                return False
+    
+    def _generate_fact_id(self, fact_data: Dict[str, Any]) -> str:
+        """
+        Generate a unique identifier for a fact.
+        
+        Args:
+            fact_data: Fact data dictionary
+            
+        Returns:
+            String ID for the fact
+        """
+        # Use document name and chunk index for consistency
+        document_name = fact_data.get("document_name", "")
+        chunk_index = fact_data.get("chunk_index", 0)
+        
+        # Add a hash of the statement for uniqueness
+        statement = fact_data.get("statement", "")
+        statement_hash = hash(statement) % 10000  # Simple hash to keep ID short
+        
+        return f"{document_name}_{chunk_index}_{statement_hash}"
+
+    def _is_duplicate_fact(self, fact_hash: str) -> bool:
+        """
+        Check if a fact is a duplicate.
+        
+        Args:
+            fact_hash: Hash of the fact
+            
+        Returns:
+            bool: True if the fact is a duplicate
+        """
+        # Check all facts in all documents
+        for document_name, facts_list in self.facts.items():
+            for existing_fact in facts_list:
+                existing_hash = self._generate_fact_hash(existing_fact)
+                if existing_hash == fact_hash:
+                    return True
+        
+        return False
+    
     def _reload_facts_from_excel(self) -> None:
         """Reload facts from Excel file to ensure they're stored correctly."""
         if os.path.exists(self.excel_path):
@@ -591,6 +713,105 @@ class FactRepository:
             return True
         return False
 
+    def clear_facts(self, document_name: str) -> bool:
+        """
+        Clear all facts for a document.
+        
+        Args:
+            document_name: Name of the document
+            
+        Returns:
+            bool: True if the document existed and facts were cleared
+        """
+        with fact_repo_lock:  # Use lock to prevent concurrent modifications
+            if document_name in self.facts:
+                del self.facts[document_name]
+                # Save changes to Excel
+                self._save_to_excel()
+                logger.info(f"Cleared all facts for document: {document_name}")
+                return True
+            return False
+
+    def search_facts(self, query: str, n_results: int = 5, 
+                     filter_criteria: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """
+        Search for facts semantically similar to the query.
+        
+        Args:
+            query: The search query text
+            n_results: Number of results to return
+            filter_criteria: Optional filter for metadata fields
+            
+        Returns:
+            List of fact dictionaries matching the query
+        """
+        try:
+            # Search the vector store
+            results = self.vector_store.search_facts(
+                query=query,
+                n_results=n_results,
+                filter_criteria=filter_criteria
+            )
+            
+            # Format the results
+            formatted_results = []
+            
+            # Check if we have search results
+            if results and "ids" in results and len(results["ids"]) > 0:
+                for i, fact_id in enumerate(results["ids"][0]):
+                    # Get the similarity score (convert from distance)
+                    similarity = 1 - results["distances"][0][i] if "distances" in results else 0
+                    
+                    # Get the document text
+                    statement = results["documents"][0][i] if "documents" in results else ""
+                    
+                    # Get the metadata
+                    metadata = results["metadatas"][0][i] if "metadatas" in results else {}
+                    
+                    # Create a complete fact record
+                    fact = {
+                        "id": fact_id,
+                        "statement": statement,
+                        "similarity": similarity,
+                        "document_name": metadata.get("document_name", ""),
+                        "chunk_index": metadata.get("chunk_index", 0),
+                        "source": metadata.get("source", ""),
+                        "extracted_at": metadata.get("extracted_at", "")
+                    }
+                    
+                    formatted_results.append(fact)
+            
+            logger.info(f"Search for '{query}' returned {len(formatted_results)} results")
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Error searching facts: {e}")
+            logger.error(traceback.format_exc())
+            return []
+
+    def get_vector_store_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the vector store.
+        
+        Returns:
+            Dictionary with vector store statistics
+        """
+        try:
+            # Get fact count from vector store
+            fact_count = self.vector_store.get_fact_count()
+            
+            return {
+                "fact_count": fact_count,
+                "collection_name": self.vector_store.collection.name,
+                # Use simpler approach to avoid relying on internal API that might change
+                "embeddings_directory": self.vector_store.client.get_settings().persist_directory
+            }
+        except Exception as e:
+            logger.error(f"Error getting vector store stats: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                "error": str(e),
+                "fact_count": 0
+            }
 
 class RejectedFactRepository:
     """Repository for storing and managing rejected facts with Excel persistence."""
@@ -598,13 +819,13 @@ class RejectedFactRepository:
     def __init__(self, excel_path: str = "data/rejected_facts.xlsx"):
         self.rejected_facts: Dict[str, List[Dict[str, Any]]] = {}
         self.excel_path = excel_path
-        # Valid status values
-        self.valid_statuses = ["verified", "rejected", "pending"]
+        # Valid verification statuses
+        self.valid_statuses = ["rejected", "pending"]
         
-        # Create data directory if it doesn't exist
-        os.makedirs(os.path.dirname(self.excel_path), exist_ok=True)
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(excel_path), exist_ok=True)
         
-        # Load existing rejected facts from Excel if file exists
+        # Try to load from Excel
         self._load_from_excel()
         
         logger.info(f"Initialized RejectedFactRepository with path: {self.excel_path}")
@@ -977,18 +1198,24 @@ class RejectedFactRepository:
         """
         return len(self.get_rejected_facts(document_name))
     
-    def clear_rejected_facts(self, document_name: str) -> None:
+    def clear_rejected_facts(self, document_name: str) -> bool:
         """
         Clear all rejected facts for a document.
         
         Args:
             document_name: Name of the document
-        """
-        if document_name in self.rejected_facts:
-            del self.rejected_facts[document_name]
             
-            # Save to Excel after each update
-            self._save_to_excel()
+        Returns:
+            bool: True if the document existed and rejected facts were cleared
+        """
+        with rejected_fact_repo_lock:  # Use lock to prevent concurrent modifications
+            if document_name in self.rejected_facts:
+                del self.rejected_facts[document_name]
+                # Save changes to Excel
+                self._save_to_excel()
+                logger.info(f"Cleared all rejected facts for document: {document_name}")
+                return True
+            return False
             
     def remove_rejected_fact(
         self, 

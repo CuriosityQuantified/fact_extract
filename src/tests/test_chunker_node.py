@@ -9,17 +9,18 @@ import sys
 import json
 from pprint import pprint
 
-
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-# Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import create_initial_state
-from graph.nodes import chunker_node
-from utils.synthetic_data import SYNTHETIC_ARTICLE_7
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+# Remove duplicate path insertion
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
+
+# Import the modules directly
+from src.models.state import create_initial_state
+from src.graph.nodes import chunker_node
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE_7
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
 @pytest.mark.asyncio
 async def test_chunker_node_direct():
@@ -29,7 +30,7 @@ async def test_chunker_node_direct():
     print("="*80)
     
     # Create test data directory
-    os.makedirs("src/fact_extract/data", exist_ok=True)
+    os.makedirs("src/data", exist_ok=True)
     
     # Create a unique document name
     unique_id = str(uuid.uuid4())[:8]

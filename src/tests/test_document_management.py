@@ -5,21 +5,28 @@ Tests various document upload and processing scenarios.
 
 import os
 import sys
-import uuid
-import pytest
 import asyncio
+import shutil
+import pytest
+import unittest.mock as mock
+from datetime import datetime
+import uuid
+from pathlib import Path
 import tempfile
 import pandas as pd
-from pathlib import Path
-from datetime import datetime
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
+
+# Fix imports to use absolute paths
+from src.models.state import create_initial_state
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
+from src.graph.nodes import process_document
+from src.gui.app import FactExtractionGUI
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -30,117 +37,67 @@ TEST_DATA_DIR = Path("test_data")
 TEST_DOCUMENT_PATH = TEST_DATA_DIR / "test_document.txt"
 TEMP_TEST_DIR = Path("temp_test_data")
 
-# Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
-
-# Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState, create_initial_state
-
 @pytest.fixture
 def setup_test_environment():
-    """Set up the test environment with clean repositories."""
-    # Create temp test directory
-    TEMP_TEST_DIR.mkdir(exist_ok=True)
+    """Set up a test environment with temporary files and mocked repositories."""
+    test_dir = "temp_test_document_management"
+    os.makedirs(test_dir, exist_ok=True)
     
-    # Create excel paths in temp directory
-    temp_chunks_path = TEMP_TEST_DIR / "test_chunks.xlsx"
-    temp_facts_path = TEMP_TEST_DIR / "test_facts.xlsx"
+    chunks_file = os.path.join(test_dir, "test_chunks.xlsx")
+    facts_file = os.path.join(test_dir, "test_facts.xlsx")
+    rejected_facts_file = os.path.join(test_dir, "test_rejected_facts.xlsx")
+
+    # Create test repositories with the temporary files
+    chunk_repo = ChunkRepository(excel_path=chunks_file)
+    fact_repo = FactRepository(excel_path=facts_file)
+    rejected_fact_repo = RejectedFactRepository(excel_path=rejected_facts_file)
     
-    # Initialize clean repositories
-    chunk_repo = ChunkRepository(excel_path=str(temp_chunks_path))
-    fact_repo = FactRepository(excel_path=str(temp_facts_path))
+    # Create and yield a test GUI, repositories, and file paths
+    gui = FactExtractionGUI()
+    gui.chunk_repo = chunk_repo
+    gui.fact_repo = fact_repo
+    gui.rejected_fact_repo = rejected_fact_repo
     
-    yield chunk_repo, fact_repo
+    yield gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file
     
-    # Clean up after tests
-    if temp_chunks_path.exists():
-        os.remove(temp_chunks_path)
-    if temp_facts_path.exists():
-        os.remove(temp_facts_path)
-    if TEMP_TEST_DIR.exists():
-        TEMP_TEST_DIR.rmdir()
+    # Clean up test directory and files
+    if os.path.exists(test_dir):
+        shutil.rmtree(test_dir)
 
 @pytest.fixture
 def create_test_files():
-    """Create test files for upload tests."""
-    # Ensure test data directory exists
-    TEST_DATA_DIR.mkdir(exist_ok=True)
+    """Create test text files."""
+    test_dir = "temp_test_document_management/files"
+    os.makedirs(test_dir, exist_ok=True)
     
-    # Create multiple test files
+    # Create test files with unique content to prevent duplicate detection
     test_files = []
-    
     for i in range(3):
-        filename = f"test_document_{i}.txt"
-        filepath = TEST_DATA_DIR / filename
-        
-        with open(filepath, "w") as f:
-            f.write(f"""
-            # Test Document {i}
-            
-            This is test document {i} for fact extraction.
-            
-            Here are some facts:
-            
-            1. The global AI market size was valued at ${60+i}.35 billion in 2022.
-            2. The AI market is expected to grow at a CAGR of {35+i}.3% from 2023 to 2030.
-            3. North America held the largest market share of {38+i}% in 2022.
-            4. The healthcare AI segment is projected to reach ${45+i}.2 billion by 2026.
-            5. Cloud-based AI solutions accounted for {48+i}.2% of the market in 2022.
-            """)
-        
-        test_files.append(filepath)
-    
-    # Create a file with no extractable facts
-    no_facts_file = TEST_DATA_DIR / "no_facts_document.txt"
-    with open(no_facts_file, "w") as f:
-        f.write("""
-        # Document with No Extractable Facts
-        
-        This document contains general information without specific facts.
-        
-        It discusses concepts and ideas but does not include specific 
-        statistics, measurements, or verifiable factual claims.
-        
-        The content is meant to be informative but does not contain 
-        concrete data points or specific metrics.
-        """)
-    
-    test_files.append(no_facts_file)
-    
-    # Create a large document
-    large_doc_file = TEST_DATA_DIR / "large_document.txt"
-    with open(large_doc_file, "w") as f:
-        f.write("# Large Test Document\n\n")
-        for i in range(100):
-            f.write(f"Paragraph {i}: This is paragraph {i} of the large document. ")
-            if i % 10 == 0:
-                f.write(f"Here's a fact: The value of metric {i} was {i*5.2} units in 2022. ")
-            f.write("\n\n")
-    
-    test_files.append(large_doc_file)
+        unique_id = uuid.uuid4().hex
+        test_file = os.path.join(test_dir, f"test_document_{i}.txt")
+        with open(test_file, 'w') as f:
+            f.write(f"{SYNTHETIC_ARTICLE}\nUnique content: {unique_id}")
+        test_files.append(test_file)
     
     yield test_files
     
     # Clean up test files
-    # for file in test_files:
-    #     if os.path.exists(file):
-    #         os.remove(file)
+    if os.path.exists(test_dir):
+        shutil.rmtree(test_dir)
 
 @pytest.mark.asyncio
 async def test_upload_single_document(setup_test_environment, create_test_files):
     """Test uploading a single document."""
-    chunk_repo, fact_repo = setup_test_environment
+    gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file = setup_test_environment
     test_files = create_test_files
     
     # Create a temporary directory for test files
     with tempfile.TemporaryDirectory() as temp_dir:
         # Mock the GUI to simulate document upload
-        with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-             patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-             patch('src.fact_extract.gui.app.create_workflow') as mock_create_workflow, \
-             patch('src.fact_extract.gui.app.extract_text_from_file') as mock_extract_text:
+        with mock.patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+             mock.patch('src.gui.app.FactRepository', return_value=fact_repo), \
+             mock.patch('src.gui.app.create_workflow') as mock_create_workflow, \
+             mock.patch('src.gui.app.extract_text_from_file') as mock_extract_text:
             
             # Setup mock for text extraction - this is crucial
             # The mock should return text content regardless of the input file path
@@ -167,8 +124,8 @@ async def test_upload_single_document(setup_test_environment, create_test_files)
             }
             
             # Setup mock workflow with proper structure matching what the GUI expects
-            mock_workflow = AsyncMock()
-            mock_workflow.ainvoke = AsyncMock(return_value={
+            mock_workflow = mock.AsyncMock()
+            mock_workflow.ainvoke = mock.AsyncMock(return_value={
                 "extracted_facts": [test_fact],
                 "is_complete": True,
                 "errors": []
@@ -260,16 +217,16 @@ async def test_upload_single_document(setup_test_environment, create_test_files)
 @pytest.mark.asyncio
 async def test_upload_multiple_documents(setup_test_environment, create_test_files):
     """Test uploading multiple documents at once."""
-    chunk_repo, fact_repo = setup_test_environment
+    gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file = setup_test_environment
     test_files = create_test_files
     
     # Mock the GUI to simulate document upload
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.create_workflow') as mock_create_workflow:
+    with mock.patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         mock.patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         mock.patch('src.gui.app.create_workflow') as mock_create_workflow:
         
         # Setup mock workflow
-        mock_workflow = AsyncMock()
+        mock_workflow = mock.AsyncMock()
         
         # Define workflow behavior for different files
         async def mock_ainvoke(state):
@@ -411,16 +368,16 @@ async def test_upload_multiple_documents(setup_test_environment, create_test_fil
 @pytest.mark.asyncio
 async def test_sequential_document_uploads(setup_test_environment, create_test_files):
     """Test uploading documents sequentially while keeping previous facts."""
-    chunk_repo, fact_repo = setup_test_environment
+    gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file = setup_test_environment
     test_files = create_test_files
     
     # Mock the GUI to simulate document upload
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.create_workflow') as mock_create_workflow:
+    with mock.patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         mock.patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         mock.patch('src.gui.app.create_workflow') as mock_create_workflow:
         
         # Setup mock workflow
-        mock_workflow = AsyncMock()
+        mock_workflow = mock.AsyncMock()
         
         # Define workflow behavior for different files
         async def mock_ainvoke(state):
@@ -583,17 +540,17 @@ async def test_sequential_document_uploads(setup_test_environment, create_test_f
 @pytest.mark.asyncio
 async def test_upload_document_with_no_facts(setup_test_environment, create_test_files):
     """Test uploading a document with no extractable facts."""
-    chunk_repo, fact_repo = setup_test_environment
+    gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file = setup_test_environment
     test_files = create_test_files
     
     # Mock the GUI to simulate document upload
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.create_workflow') as mock_create_workflow:
+    with mock.patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         mock.patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         mock.patch('src.gui.app.create_workflow') as mock_create_workflow:
         
         # Setup mock workflow with no facts
-        mock_workflow = AsyncMock()
-        mock_workflow.ainvoke = AsyncMock(return_value={
+        mock_workflow = mock.AsyncMock()
+        mock_workflow.ainvoke = mock.AsyncMock(return_value={
             "chunks": [{"chunk_index": 0, "text": "Content without extractable facts."}],
             "extracted_facts": [],  # No facts extracted
             "is_complete": True,
@@ -661,16 +618,16 @@ async def test_upload_document_with_no_facts(setup_test_environment, create_test
 @pytest.mark.asyncio
 async def test_upload_large_document(setup_test_environment, create_test_files):
     """Test uploading a large document."""
-    chunk_repo, fact_repo = setup_test_environment
+    gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file = setup_test_environment
     test_files = create_test_files
     
     # Mock the GUI to simulate document upload
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.create_workflow') as mock_create_workflow:
+    with mock.patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         mock.patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         mock.patch('src.gui.app.create_workflow') as mock_create_workflow:
         
         # Setup mock workflow with multiple chunks
-        mock_workflow = AsyncMock()
+        mock_workflow = mock.AsyncMock()
         
         # Create a response with multiple chunks and facts
         async def mock_ainvoke(state):
@@ -700,7 +657,7 @@ async def test_upload_large_document(setup_test_environment, create_test_files):
             }
         
         # Use AsyncMock for the ainvoke method
-        mock_workflow.ainvoke = AsyncMock(side_effect=mock_ainvoke)
+        mock_workflow.ainvoke = mock.AsyncMock(side_effect=mock_ainvoke)
         mock_create_workflow.return_value = (mock_workflow, "input_text")
         
         # Initialize GUI
@@ -779,17 +736,17 @@ async def test_upload_large_document(setup_test_environment, create_test_files):
 @pytest.mark.asyncio
 async def test_upload_duplicate_document(setup_test_environment, create_test_files):
     """Test uploading a duplicate document."""
-    chunk_repo, fact_repo = setup_test_environment
+    gui, chunk_repo, fact_repo, rejected_fact_repo, chunks_file, facts_file, rejected_facts_file = setup_test_environment
     test_files = create_test_files
     
     # First patch is_chunk_processed method to control duplicate detection
     original_is_chunk_processed = chunk_repo.is_chunk_processed
     
     # Mock the GUI to simulate document upload
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.create_workflow') as mock_create_workflow, \
-         patch('src.fact_extract.gui.app.extract_text_from_file') as mock_extract_text:
+    with mock.patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         mock.patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         mock.patch('src.gui.app.create_workflow') as mock_create_workflow, \
+         mock.patch('src.gui.app.extract_text_from_file') as mock_extract_text:
         
         # Setup mock for text extraction
         mock_extract_text.side_effect = lambda file_path: """
@@ -799,8 +756,8 @@ async def test_upload_duplicate_document(setup_test_environment, create_test_fil
         """
         
         # Setup mock workflow
-        mock_workflow = AsyncMock()
-        mock_workflow.ainvoke = AsyncMock(return_value={
+        mock_workflow = mock.AsyncMock()
+        mock_workflow.ainvoke = mock.AsyncMock(return_value={
             "chunks": [{"chunk_index": 0, "text": "Test chunk content"}],
             "extracted_facts": [
                 {

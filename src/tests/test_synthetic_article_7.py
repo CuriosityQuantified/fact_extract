@@ -4,19 +4,22 @@ import os
 import hashlib
 from datetime import datetime
 import uuid
+import pytest
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from utils.synthetic_data import SYNTHETIC_ARTICLE_7
-from models.state import create_initial_state, ProcessingState
-from graph.nodes import process_document
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE_7
+from src.models.state import create_initial_state, ProcessingState
+from src.graph.nodes import process_document
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_synthetic_article_7():
     """Test the fact extraction pipeline with SYNTHETIC_ARTICLE_7."""
     print("\n" + "="*80)

@@ -10,17 +10,20 @@ from datetime import datetime
 import hashlib
 import uuid
 import time
+import pytest
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import create_initial_state
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.models.state import create_initial_state
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_multiple_facts_per_chunk_unique():
     """Test how the system handles chunks with multiple unique facts."""
     print("\n" + "="*80)
@@ -28,7 +31,7 @@ async def test_multiple_facts_per_chunk_unique():
     print("="*80)
     
     # Create test data directory
-    os.makedirs("src/fact_extract/data", exist_ok=True)
+    os.makedirs("src/data", exist_ok=True)
     
     # Initialize repositories
     chunk_repo = ChunkRepository()
@@ -113,7 +116,7 @@ async def test_multiple_facts_per_chunk_unique():
     
     # Check facts in the repository
     print("\nChecking facts in repository after first fact...")
-    facts_excel_path = "data/all_facts.xlsx"
+    facts_excel_path = "src/data/all_facts.xlsx"
     if os.path.exists(facts_excel_path):
         facts_df = pd.read_excel(facts_excel_path)
         test_facts = facts_df[facts_df['document_name'] == document_name]

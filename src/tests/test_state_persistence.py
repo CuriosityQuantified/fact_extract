@@ -15,17 +15,19 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState, create_initial_state
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState, create_initial_state
+
+from src import process_document
 
 @pytest.fixture
 def temp_data_dir():
@@ -197,9 +199,9 @@ def test_gui_persistence(setup_repositories_with_data):
     repo_data = setup_repositories_with_data
     
     # Create a GUI instance, which should load from the repository files
-    with patch('src.fact_extract.storage.chunk_repository.ChunkRepository') as mock_chunk_repo, \
-         patch('src.fact_extract.storage.fact_repository.FactRepository') as mock_fact_repo, \
-         patch('src.fact_extract.storage.fact_repository.RejectedFactRepository') as mock_rejected_fact_repo:
+    with patch('src.storage.chunk_repository.ChunkRepository') as mock_chunk_repo, \
+         patch('src.storage.fact_repository.FactRepository') as mock_fact_repo, \
+         patch('src.storage.fact_repository.RejectedFactRepository') as mock_rejected_fact_repo:
         
         # Configure the mocks to return our test data
         mock_chunk_repo.return_value.get_all_chunks.return_value = [
@@ -287,13 +289,13 @@ async def test_duplicate_detection_after_restart(setup_repositories_with_data, t
     rejected_fact_repo = RejectedFactRepository(excel_path=repo_data["rejected_fact_repo_path"])
     
     # Mock the workflow to simulate processing
-    with patch('src.fact_extract.graph.nodes.chunker_node') as mock_chunker, \
-         patch('src.fact_extract.graph.nodes.extractor_node') as mock_extractor, \
-         patch('src.fact_extract.graph.nodes.validator_node') as mock_validator, \
-         patch('src.fact_extract.graph.nodes.create_workflow') as mock_create_workflow, \
-         patch('src.fact_extract.storage.chunk_repository.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.storage.fact_repository.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.graph.nodes.chunker_node') as mock_chunker, \
+         patch('src.graph.nodes.extractor_node') as mock_extractor, \
+         patch('src.graph.nodes.validator_node') as mock_validator, \
+         patch('src.graph.nodes.create_workflow') as mock_create_workflow, \
+         patch('src.storage.chunk_repository.ChunkRepository', return_value=chunk_repo), \
+         patch('src.storage.fact_repository.FactRepository', return_value=fact_repo), \
+         patch('src.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo):
         
         # Configure the mock workflow to just pass through state
         async def mock_workflow_run(state):
@@ -302,9 +304,6 @@ async def test_duplicate_detection_after_restart(setup_repositories_with_data, t
             return state
         
         mock_create_workflow.return_value.run = mock_workflow_run
-        
-        # Import after mocking
-        from src.fact_extract import process_document
         
         # Simulate processing the same document again
         # Should detect it's a duplicate and not call the workflow
@@ -345,8 +344,8 @@ async def test_new_fact_after_restart(setup_repositories_with_data):
     initial_count = len(initial_facts)
     
     # Create a new fact manually
-    with patch('src.fact_extract.storage.fact_repository.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.storage.fact_repository.FactRepository', return_value=fact_repo), \
+         patch('src.storage.fact_repository.RejectedFactRepository', return_value=rejected_fact_repo):
         
         # Store a new fact directly
         new_fact = {
@@ -377,7 +376,7 @@ async def test_new_fact_after_restart(setup_repositories_with_data):
         new_gui = FactExtractionGUI()
         
         # Check that the new fact is visible in the GUI
-        with patch('src.fact_extract.storage.fact_repository.FactRepository.get_all_facts', return_value=updated_facts):
+        with patch('src.storage.fact_repository.FactRepository.get_all_facts', return_value=updated_facts):
             facts_summary = new_gui.format_facts_summary(updated_facts)
             assert "$480B" in facts_summary
             

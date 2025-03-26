@@ -25,16 +25,21 @@ from src.models.state import (
     TextChunkDict,
     FactDict,
     MemoryDict,
-    create_initial_state
+    create_initial_state,
+    ProcessingState
 )
-from src import ProcessingState
 from src.agents import FACT_EXTRACTOR_PROMPT, FACT_VERIFICATION_PROMPT
 from src.storage.chunk_repository import ChunkRepository
 from src.storage.fact_repository import FactRepository, RejectedFactRepository
 from src.tools.submission import submit_fact
+from src.config import config
 
 import logging
 logger = logging.getLogger(__name__)
+
+# Get the configured max concurrent chunks
+MAX_CONCURRENT_CHUNKS = config["max_concurrent_chunks"]
+logger.info(f"Using maximum concurrent chunks: {MAX_CONCURRENT_CHUNKS}")
 
 # Initialize repositories and LLM as module-level variables
 chunk_repo = ChunkRepository()
@@ -354,33 +359,6 @@ async def extractor_node(state: WorkflowStateDict) -> WorkflowStateDict:
                     facts.append(fact_data)
         
         # If still no facts, try fact: pattern for free-form responses
-        if not facts_found:
-            # Try to find "Fact:" or "Fact N:" patterns
-            fact_lines = re.finditer(r'(?:^|\n)(?:Fact\s*(?:\d+)?\s*:|•|\*|\d+\.)\s*(.+?)(?=(?:\n(?:Fact\s*(?:\d+)?\s*:|•|\*|\d+\.)|$))', response.content, re.DOTALL)
-            
-            for i, match in enumerate(fact_lines):
-                fact_text = match.group(1).strip()
-                if fact_text:
-                    facts_found = True
-                    print(f"Fact {i+1}:")
-                    print("-"*20)
-                    print(fact_text)
-                    
-                    # Create the fact record
-                    fact_data = {
-                        "statement": fact_text,
-                        "document_name": state["document_name"],
-                        "source_url": state.get("source_url", ""),
-                        "original_text": current_chunk["content"],
-                        "chunk_index": current_chunk["index"],
-                        "source_chunk": current_chunk["index"],
-                        "timestamp": datetime.now().isoformat(),
-                        "status": "pending",
-                        "verification_status": "pending"
-                    }
-                    facts.append(fact_data)
-        
-        # If no structured format detected, look for sentences that might be facts
         if not facts_found and len(response.content.strip()) > 0:
             print("No numbered facts found, trying to extract statements...")
             
@@ -623,6 +601,7 @@ async def validator_node(state: WorkflowStateDict) -> WorkflowStateDict:
                     # Store fact based on validation status
                     if is_valid:
                         print("Fact verified - storing in approved repository")
+                        # fact_repo.store_fact will automatically add the fact to both Excel and the vector database
                         fact_repo.store_fact(fact)
                         # Track verified facts by chunk
                         if chunk_index not in chunk_verified_facts:
@@ -741,17 +720,316 @@ def create_workflow(
     return app, "input_text"
 
 
-async def process_document(file_path: str, state: ProcessingState) -> Dict[str, Any]:
+async def process_chunk(
+    chunk: TextChunkDict,
+    document_name: str,
+    source_url: str,
+    chunk_repo: ChunkRepository,
+    fact_repo: FactRepository,
+    rejected_fact_repo: RejectedFactRepository,
+    llm
+) -> Dict[str, Any]:
+    """Process a single chunk to extract and validate facts.
+    
+    Args:
+        chunk: The chunk data to process
+        document_name: Name of the document
+        source_url: URL of the source document
+        chunk_repo: Repository for tracking chunks
+        fact_repo: Repository for facts
+        rejected_fact_repo: Repository for rejected facts
+        llm: Language model for extraction and validation
+        
+    Returns:
+        Dictionary with processing results
+    """
+    try:
+        print(f"\nProcessing chunk {chunk['index']} in parallel")
+        start_time = datetime.now()
+        
+        # Extract facts from the chunk
+        print(f"Extracting facts from chunk {chunk['index']}")
+        extraction_response = await llm.ainvoke(
+            [HumanMessage(content=FACT_EXTRACTOR_PROMPT.format(text=chunk['content']))]
+        )
+        
+        # Parse facts
+        facts_found = False
+        facts = []
+        import re
+        
+        # Format 1: <fact>content</fact>
+        fact_pattern = re.compile(r'<fact>(.+?)</fact>', re.DOTALL)
+        matches = fact_pattern.finditer(extraction_response.content)
+        
+        for match in matches:
+            fact_text = match.group(1).strip()
+            if fact_text:
+                facts_found = True
+                
+                # Create the fact record
+                fact_data = {
+                    "statement": fact_text,
+                    "document_name": document_name,
+                    "source_url": source_url,
+                    "original_text": chunk['content'],
+                    "chunk_index": chunk['index'],
+                    "source_chunk": chunk['index'],
+                    "timestamp": datetime.now().isoformat(),
+                    "status": "pending",
+                    "verification_status": "pending"
+                }
+                facts.append(fact_data)
+        
+        # Try alternative formats if no facts found
+        if not facts_found:
+            # Format 2: Numbered facts
+            numbered_pattern = re.compile(r'(?:^|\n)\s*(\d+)[.:\)]\\s*(.+?)(?=(?:^|\n)\s*\d+[.:\)]|$)', re.DOTALL)
+            matches = numbered_pattern.finditer(extraction_response.content)
+            
+            for match in matches:
+                fact_text = match.group(2).strip()
+                if fact_text:
+                    facts_found = True
+                    
+                    # Create the fact record
+                    fact_data = {
+                        "statement": fact_text,
+                        "document_name": document_name,
+                        "source_url": source_url,
+                        "original_text": chunk['content'],
+                        "chunk_index": chunk['index'],
+                        "source_chunk": chunk['index'],
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "pending",
+                        "verification_status": "pending"
+                    }
+                    facts.append(fact_data)
+        
+        # Update chunk status after extraction
+        chunk_repo.update_chunk_status(
+            document_name=document_name,
+            chunk_index=chunk['index'],
+            status="extracted",
+            contains_facts=len(facts) > 0,
+            error_message=None
+        )
+        
+        # Validate facts if any were found
+        verified_facts = []
+        rejected_facts = []
+        
+        if facts:
+            print(f"Validating {len(facts)} facts from chunk {chunk['index']}")
+            
+            for fact in facts:
+                # Validate each fact
+                verification_response = await llm.ainvoke(
+                    [HumanMessage(content=FACT_VERIFICATION_PROMPT.format(fact=fact["statement"]))]
+                )
+                
+                # Parse the validation result
+                import re
+                verification_result = "unknown"
+                reason = ""
+                reasoning = ""
+                
+                # Extract verification result with regex
+                result_pattern = re.compile(r'<verification_result>(.*?)</verification_result>', re.DOTALL)
+                result_match = result_pattern.search(verification_response.content)
+                
+                if result_match:
+                    verification_result = result_match.group(1).strip().lower()
+                
+                # Extract verification reason
+                reason_pattern = re.compile(r'<verification_reason>(.*?)</verification_reason>', re.DOTALL)
+                reason_match = reason_pattern.search(verification_response.content)
+                
+                if reason_match:
+                    reason = reason_match.group(1).strip()
+                
+                # Extract detailed reasoning
+                reasoning_pattern = re.compile(r'<verification_reasoning>(.*?)</verification_reasoning>', re.DOTALL)
+                reasoning_match = reasoning_pattern.search(verification_response.content)
+                
+                if reasoning_match:
+                    reasoning = reasoning_match.group(1).strip()
+                
+                # Add verification info to the fact
+                fact["verification_status"] = verification_result if verification_result in ["verified", "rejected"] else "pending"
+                fact["verification_reason"] = reason
+                fact["verification_reasoning"] = reasoning
+                
+                # Store fact in appropriate repository
+                if fact["verification_status"] == "verified":
+                    fact_repo.store_fact(fact)
+                    verified_facts.append(fact)
+                elif fact["verification_status"] == "rejected":
+                    rejected_fact_repo.store_rejected_fact(fact)
+                    rejected_facts.append(fact)
+        
+        # Mark chunk as fully processed
+        chunk_repo.update_chunk_status(
+            document_name=document_name,
+            chunk_index=chunk['index'],
+            status="processed",
+            contains_facts=len(facts) > 0,
+            error_message=None,
+            all_facts_extracted=True
+        )
+        
+        processing_time = (datetime.now() - start_time).total_seconds()
+        print(f"Chunk {chunk['index']} processing completed in {processing_time:.2f} seconds")
+        
+        return {
+            "chunk_index": chunk['index'],
+            "facts_found": len(facts),
+            "verified_facts": len(verified_facts),
+            "rejected_facts": len(rejected_facts),
+            "processing_time": processing_time,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        error_msg = f"Error processing chunk {chunk['index']}: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        
+        # Update chunk status to mark error
+        chunk_repo.update_chunk_status(
+            document_name=document_name,
+            chunk_index=chunk['index'],
+            status="error",
+            error_message=error_msg
+        )
+        
+        return {
+            "chunk_index": chunk['index'],
+            "status": "error",
+            "error": error_msg
+        }
+
+
+async def parallel_process_chunks(
+    chunks: List[TextChunkDict],
+    document_name: str,
+    source_url: str,
+    max_concurrent_chunks: int = 5,
+    chunk_repo: ChunkRepository = None,
+    fact_repo: FactRepository = None,
+    rejected_fact_repo: RejectedFactRepository = None,
+    llm = None
+) -> Dict[str, Any]:
+    """Process multiple chunks in parallel using asyncio tasks.
+    
+    Args:
+        chunks: List of chunks to process
+        document_name: Name of the document
+        source_url: URL of the source document
+        max_concurrent_chunks: Maximum number of chunks to process concurrently
+        chunk_repo: Repository for tracking chunks (uses module-level if None)
+        fact_repo: Repository for facts (uses module-level if None)
+        rejected_fact_repo: Repository for rejected facts (uses module-level if None)
+        llm: Language model for extraction and validation (uses module-level if None)
+        
+    Returns:
+        Dictionary with processing results
+    """
+    # Use module-level repositories and LLM if not provided
+    _chunk_repo = chunk_repo or globals().get('chunk_repo')
+    _fact_repo = fact_repo or globals().get('fact_repo')
+    _rejected_fact_repo = rejected_fact_repo or globals().get('rejected_fact_repo')
+    _llm = llm or globals().get('llm')
+    
+    if not _chunk_repo or not _fact_repo or not _rejected_fact_repo or not _llm:
+        raise ValueError("Repositories and LLM must be provided or available as module-level variables")
+    
+    start_time = datetime.now()
+    print(f"\nStarting parallel processing of {len(chunks)} chunks with {max_concurrent_chunks} workers")
+    
+    # Create a queue of chunks to process
+    import asyncio
+    from asyncio import Queue, Semaphore
+    
+    # Results tracking
+    results = []
+    errors = []
+    facts_extracted = 0
+    total_verified_facts = 0
+    total_rejected_facts = 0
+    
+    # Create a semaphore to limit concurrent processing
+    semaphore = Semaphore(max_concurrent_chunks)
+    
+    async def process_chunk_with_semaphore(chunk):
+        async with semaphore:
+            return await process_chunk(
+                chunk=chunk,
+                document_name=document_name,
+                source_url=source_url,
+                chunk_repo=_chunk_repo,
+                fact_repo=_fact_repo,
+                rejected_fact_repo=_rejected_fact_repo,
+                llm=_llm
+            )
+    
+    # Create tasks for each chunk
+    tasks = [process_chunk_with_semaphore(chunk) for chunk in chunks]
+    
+    # Wait for all tasks to complete, with proper exception handling
+    chunk_results = []
+    for task in asyncio.as_completed(tasks):
+        try:
+            result = await task
+            chunk_results.append(result)
+            
+            # Aggregate stats from successful chunks
+            if result.get("status") == "success":
+                facts_extracted += result.get("facts_found", 0)
+                total_verified_facts += result.get("verified_facts", 0)
+                total_rejected_facts += result.get("rejected_facts", 0)
+            else:
+                errors.append(result.get("error", "Unknown error"))
+                
+        except Exception as e:
+            errors.append(f"Task error: {str(e)}")
+    
+    # Calculate total processing time
+    total_time = (datetime.now() - start_time).total_seconds()
+    
+    print(f"\nParallel processing complete:")
+    print(f"Processed {len(chunks)} chunks in {total_time:.2f} seconds")
+    print(f"Extracted {facts_extracted} facts ({total_verified_facts} verified, {total_rejected_facts} rejected)")
+    if errors:
+        print(f"Encountered {len(errors)} errors")
+    
+    # Compile full results
+    return {
+        "status": "success" if not errors else "partial_success",
+        "chunks_processed": len(chunks),
+        "facts_extracted": facts_extracted,
+        "verified_facts": total_verified_facts,
+        "rejected_facts": total_rejected_facts,
+        "processing_time": total_time,
+        "chunk_results": chunk_results,
+        "errors": errors
+    }
+
+async def process_document(file_path: str, state: ProcessingState, max_concurrent_chunks: int = None) -> Dict[str, Any]:
     """
     Process a document for fact extraction.
     
     Args:
         file_path: Path to the document to process
         state: Processing state
+        max_concurrent_chunks: Maximum number of chunks to process concurrently (defaults to configured value)
         
     Returns:
         Dict with processing results
     """
+    # Use configured value if not explicitly provided
+    if max_concurrent_chunks is None:
+        max_concurrent_chunks = MAX_CONCURRENT_CHUNKS
+        
     import os
     import hashlib
     
@@ -816,47 +1094,122 @@ async def process_document(file_path: str, state: ProcessingState) -> Dict[str, 
     # Start processing
     state.start_processing(file_path)
     
-    # Create initial state for workflow
+    # Create initial state for chunking the document
     document_name = os.path.basename(file_path)
-    workflow_state = create_initial_state(
-        input_text=content,
-        document_name=document_name,
-        source_url=""
+    
+    # Initialize repositories
+    from src.storage.fact_repository import FactRepository, RejectedFactRepository
+    fact_repo = FactRepository()
+    rejected_fact_repo = RejectedFactRepository()
+    
+    # Step 1: Split text into chunks (same as chunker_node)
+    print("\nSplitting document into chunks...")
+    
+    text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=config["chunk_size"],
+        chunk_overlap=config["chunk_overlap"],
+        separators=["\n\n", "\n", ". ", " ", ""],
+        is_separator_regex=False,
     )
     
-    # Run workflow
+    # Split the text into documents with metadata
+    documents = text_splitter.create_documents(
+        [content],
+        metadatas=[{"source": file_path, "document_hash": document_hash}]
+    )
+    
+    # Create chunk objects
+    chunks = []
+    for i, doc in enumerate(documents):
+        chunk = doc.page_content
+        if not chunk.strip():
+            continue
+            
+        # Count words in chunk
+        word_count = len(chunk.split())
+        
+        chunk_data = {
+            "content": chunk.strip(),
+            "index": i,
+            "metadata": {
+                "word_count": word_count,
+                "char_length": len(chunk),
+                "source": doc.metadata.get("source", ""),
+                "document_hash": document_hash
+            }
+        }
+        
+        # Check if chunk has already been processed successfully
+        if chunk_repo.is_chunk_processed(chunk_data, document_name):
+            print(f"Chunk {i} has already been processed successfully, skipping...")
+            continue
+            
+        # Store new chunk as pending
+        chunk_repo.store_chunk({
+            "timestamp": datetime.now().isoformat(),
+            "document_name": document_name,
+            "source_url": "",
+            "chunk_content": chunk_data["content"],
+            "chunk_index": chunk_data["index"],
+            "status": "pending",
+            "contains_facts": False,
+            "error_message": None,
+            "processing_time": None,
+            "document_hash": document_hash,
+            "all_facts_extracted": False,
+            "metadata": chunk_data["metadata"]
+        })
+        
+        # Add chunk to list for processing
+        chunks.append(chunk_data)
+    
+    print(f"Split document into {len(chunks)} chunks")
+    
+    # Step 2: Process chunks in parallel
+    if not chunks:
+        print("No chunks to process, document may have been empty or already processed")
+        state.complete_file(file_path)
+        return {
+            "status": "success",
+            "facts": [],
+            "file_path": file_path,
+            "document_hash": document_hash,
+            "message": "No new chunks to process"
+        }
+    
     try:
-        # Create workflow
-        workflow, input_key = create_workflow(chunk_repo, fact_repo)
+        # Process chunks in parallel
+        print(f"Processing {len(chunks)} chunks in parallel with {max_concurrent_chunks} workers")
+        result = await parallel_process_chunks(
+            chunks=chunks,
+            document_name=document_name,
+            source_url="",
+            max_concurrent_chunks=max_concurrent_chunks,
+            chunk_repo=chunk_repo,
+            fact_repo=fact_repo,
+            rejected_fact_repo=rejected_fact_repo
+        )
         
-        # Execute workflow
-        result = await workflow.ainvoke({input_key: content})
+        # Get verified facts from the repository
+        all_facts = fact_repo.get_facts_for_document(document_name, verified_only=True)
         
-        # Extract facts from result
-        facts = []
-        for fact in result.get("extracted_facts", []):
-            if fact.get("verification_status") == "verified":
-                facts.append(fact)
-                state.add_fact(file_path, fact)
-        
-        # Mark all chunks as having all facts extracted
-        for chunk in result.get("chunks", []):
-            chunk_index = chunk.get("index")
-            chunk_repo.update_chunk_status(
-                document_name=document_name,
-                chunk_index=chunk_index,
-                status="processed",
-                all_facts_extracted=True
-            )
+        # Add facts to the state
+        for fact in all_facts:
+            state.add_fact(file_path, fact)
         
         # Mark file as processed
         state.complete_file(file_path)
         
         return {
             "status": "success",
-            "facts": facts,
             "file_path": file_path,
-            "document_hash": document_hash
+            "document_hash": document_hash,
+            "chunks_processed": result["chunks_processed"],
+            "facts_extracted": result["facts_extracted"],
+            "verified_facts": result["verified_facts"],
+            "rejected_facts": result["rejected_facts"],
+            "processing_time": result["processing_time"],
+            "errors": result["errors"] if result["errors"] else None
         }
         
     except Exception as e:

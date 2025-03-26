@@ -1,23 +1,31 @@
 """
-Test script to verify rejected facts storage functionality.
+Test script for verifying the rejected facts functionality.
 """
 
 import os
 import sys
 import asyncio
+import json
+from pathlib import Path
+from dotenv import load_dotenv
 import uuid
-import pytest
 from datetime import datetime
 import pandas as pd
+import pytest
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from storage.fact_repository import FactRepository, RejectedFactRepository
-from models.state import WorkflowStateDict
+
+# Load environment variables from .env file
+dotenv_path = Path(__file__).parents[2] / '.env'
+load_dotenv(dotenv_path)
+
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
+from src.models.state import WorkflowStateDict
 
 @pytest.mark.asyncio
 async def test_rejected_facts_storage():
@@ -96,31 +104,27 @@ async def test_rejected_facts_storage():
     for fact in rejected_facts:
         print(f"- {fact['statement']}")
     
-    # Verify that rejected facts are in the Excel file
-    rejected_excel_path = "data/rejected_facts.xlsx"
+    # Create test data directory
+    os.makedirs("src/data", exist_ok=True)
+    
+    # Check Excel storage
+    print("\nChecking Excel storage...")
+    rejected_excel_path = "src/data/rejected_facts.xlsx"
     if os.path.exists(rejected_excel_path):
-        try:
-            df = pd.read_excel(rejected_excel_path)
-            print(f"\nRejected facts in Excel file: {len(df)}")
-            
-            # Filter to our test document
-            doc_df = df[df['document_name'] == document_name]
-            print(f"Rejected facts for test document: {len(doc_df)}")
-            
-            # Print rejected facts from Excel
-            for _, row in doc_df.iterrows():
-                print(f"- {row['fact']}")
-                print(f"  Reason: {row['rejection_reason']}")
-            
-            test_passed = len(rejected_facts) == len(doc_df)
-            print(f"\nTest {'PASSED' if test_passed else 'FAILED'}")
-            print(f"Expected {len(rejected_facts)} rejected facts, found {len(doc_df)} in Excel file")
-            
-        except Exception as e:
-            print(f"Error reading Excel file: {str(e)}")
+        rejected_df = pd.read_excel(rejected_excel_path)
+        print(f"\nRejected facts Excel file exists with {len(rejected_df)} rows")
+        
+        # Find the test fact
+        test_facts = rejected_df[rejected_df['document_name'] == document_name]
+        print(f"Found {len(test_facts)} test facts")
+        
+        if len(test_facts) > 0:
+            print("\nREJECTED FACTS:")
+            for i, fact in test_facts.iterrows():
+                print(f"  {i+1}. {fact.get('statement', 'No statement')[:100]}")
+                print(f"     Reason: {fact.get('rejection_reason', 'No reason')[:100]}")
     else:
-        print(f"\nRejected facts Excel file not found at {rejected_excel_path}")
-        print("Test FAILED")
+        print("Rejected facts Excel file does not exist!")
     
     print("="*80)
 

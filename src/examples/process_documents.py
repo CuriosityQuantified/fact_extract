@@ -7,8 +7,8 @@ import logging
 from pathlib import Path
 from typing import List, Dict
 
-from fact_extract.utils.document_loader import DocumentLoader
-from fact_extract.tests.test_document_processors import (
+from src.fact_extract.utils.document_loader import DocumentLoader
+from src.fact_extract.tests.test_document_processors import (
     setup_module,
     teardown_module,
     TEST_DATA_DIR

@@ -5,19 +5,22 @@ import uuid
 import pandas as pd
 from datetime import datetime
 import hashlib
+import pytest
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import WorkflowStateDict
-from graph.nodes import chunker_node, extractor_node, validator_node
-from utils.synthetic_data import SYNTHETIC_ARTICLE_6
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.models.state import WorkflowStateDict
+from src.graph.nodes import chunker_node, extractor_node, validator_node
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE_6
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_full_pipeline_duplicate():
     """
     Test the full production pipeline with SYNTHETIC_ARTICLE_6:
@@ -29,7 +32,7 @@ async def test_full_pipeline_duplicate():
     print("="*80)
     
     # Create test data directory
-    os.makedirs("data", exist_ok=True)
+    os.makedirs("src/data", exist_ok=True)
     
     # Initialize repositories
     chunk_repo = ChunkRepository()
@@ -101,14 +104,14 @@ async def test_full_pipeline_duplicate():
             print(f"  {i}. {fact.get('statement', 'No statement')[:100]}...")
         
         # Check Excel storage for facts
-        if os.path.exists("data/all_facts.xlsx"):
-            facts_df = pd.read_excel("data/all_facts.xlsx")
+        if os.path.exists("src/data/all_facts.xlsx"):
+            facts_df = pd.read_excel("src/data/all_facts.xlsx")
             doc_facts = facts_df[facts_df['document_name'] == document_name]
             print(f"\nStored {len(doc_facts)} facts in Excel for first submission")
         
         # Check Excel storage for chunks
-        if os.path.exists("data/all_chunks.xlsx"):
-            chunks_df = pd.read_excel("data/all_chunks.xlsx")
+        if os.path.exists("src/data/all_chunks.xlsx"):
+            chunks_df = pd.read_excel("src/data/all_chunks.xlsx")
             doc_chunks = chunks_df[chunks_df['document_name'] == document_name]
             print(f"Stored {len(doc_chunks)} chunks in Excel for first submission")
             
@@ -212,28 +215,28 @@ async def test_full_pipeline_duplicate():
             print(f"Chunker node created {len(modified_chunker_result.get('chunks', []))} chunks for modified document.")
         
         # Check Excel storage for chunks of modified document
-        if os.path.exists("data/all_chunks.xlsx"):
-            chunks_df = pd.read_excel("data/all_chunks.xlsx")
+        if os.path.exists("src/data/all_chunks.xlsx"):
+            chunks_df = pd.read_excel("src/data/all_chunks.xlsx")
             mod_chunks = chunks_df[chunks_df['document_name'] == modified_document_name]
             print(f"\nStored {len(mod_chunks)} chunks in Excel for modified document")
         
         # Check if facts were stored in Excel files
-        if os.path.exists("data/all_facts.xlsx"):
-            facts_df = pd.read_excel("data/all_facts.xlsx")
+        if os.path.exists("src/data/all_facts.xlsx"):
+            facts_df = pd.read_excel("src/data/all_facts.xlsx")
             facts_df = facts_df[facts_df['document_name'] == document_name]
             print(f"Found {len(facts_df)} facts in Excel file")
             if not facts_df.empty:
                 print(f"Facts in Excel: {facts_df['fact'].tolist()}")
             
         # Check if chunks were stored in Excel files
-        if os.path.exists("data/all_chunks.xlsx"):
-            chunks_df = pd.read_excel("data/all_chunks.xlsx")
+        if os.path.exists("src/data/all_chunks.xlsx"):
+            chunks_df = pd.read_excel("src/data/all_chunks.xlsx")
             chunks_df = chunks_df[chunks_df['document_name'] == document_name]
             print(f"Found {len(chunks_df)} chunks in Excel file")
         
         # Check Excel for duplicate document
-        if os.path.exists("data/all_chunks.xlsx"):
-            chunks_df = pd.read_excel("data/all_chunks.xlsx")
+        if os.path.exists("src/data/all_chunks.xlsx"):
+            chunks_df = pd.read_excel("src/data/all_chunks.xlsx")
             duplicate_chunks = chunks_df[chunks_df['document_name'] == modified_document_name]
             print(f"Found {len(duplicate_chunks)} chunks for duplicate document in Excel")
             if len(duplicate_chunks) > 0:

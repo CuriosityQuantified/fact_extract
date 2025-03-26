@@ -1311,43 +1311,138 @@ class FactExtractionGUI:
             return f"Error exporting facts: {str(e)}"
 
     def export_facts_to_markdown(self, output_path):
-        """Export verified facts to Markdown format.
+        """Export verified facts to a Markdown file."""
+        try:
+            self.debug_print(f"Exporting facts to Markdown file: {output_path}")
+            
+            # Create the output directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Append .md extension if missing
+            if not output_path.endswith(".md"):
+                output_path += ".md"
+            
+            # Get all verified facts from the repository
+            verified_facts = self.fact_repo.get_all_facts(verified_only=True)
+            self.debug_print(f"Found {len(verified_facts)} verified facts to export")
+            
+            # Group facts by document
+            facts_by_document = {}
+            for fact in verified_facts:
+                doc_name = fact.get("document_name", "Unknown Document")
+                if doc_name not in facts_by_document:
+                    facts_by_document[doc_name] = []
+                facts_by_document[doc_name].append(fact)
+            
+            # Create Markdown content
+            markdown_content = "# Extracted and Verified Facts\n\n"
+            markdown_content += f"*Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n"
+            
+            # Add facts for each document
+            for doc_name, facts in facts_by_document.items():
+                markdown_content += f"## {doc_name}\n\n"
+                
+                for i, fact in enumerate(facts, 1):
+                    statement = fact.get("statement", "No statement")
+                    reason = fact.get("verification_reason", "No reasoning provided")
+                    
+                    markdown_content += f"### Fact {i}\n\n"
+                    markdown_content += f"**Statement:** {statement}\n\n"
+                    markdown_content += f"**Verification Reasoning:** {reason}\n\n"
+                    markdown_content += "---\n\n"
+            
+            # Write to file
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+            
+            self.debug_print(f"Successfully exported {len(verified_facts)} facts to {output_path}")
+            return f"Successfully exported {len(verified_facts)} facts to {output_path}"
+        except Exception as e:
+            error_msg = f"Error exporting facts to Markdown: {str(e)}"
+            self.debug_print(error_msg)
+            return error_msg
+    
+    def search_facts(self, query: str, n_results: int = 5) -> Tuple[str, str]:
+        """
+        Search for facts semantically similar to the query.
         
         Args:
-            output_path: Path to save the Markdown file
+            query: The search query text
+            n_results: Number of results to return
             
         Returns:
-            str: Status message with the export result
+            Tuple of (results_markdown, stats_markdown)
         """
-        self.debug_print(f"Exporting facts to Markdown: {output_path}")
-        facts = self.fact_repo.get_all_facts(verified_only=True)
+        self.debug_print(f"Searching for facts with query: '{query}', n_results={n_results}")
         
         try:
-            # Group facts by document
-            grouped_facts = {}
-            for fact in facts:
-                doc_name = fact.get("document_name", "Unknown Document")
-                if doc_name not in grouped_facts:
-                    grouped_facts[doc_name] = []
-                grouped_facts[doc_name].append(fact)
+            # Search for facts using the repository's search method
+            results = self.fact_repo.search_facts(query=query, n_results=n_results)
             
-            with open(output_path, 'w') as f:
-                f.write("# Verified Facts Report\n\n")
-                f.write(f"Total Facts: {len(facts)}\n\n")
+            # Get vector store stats
+            stats = self.fact_repo.get_vector_store_stats()
+            
+            # Format the search statistics
+            stats_markdown = f"📊 **Search Statistics**\n"
+            stats_markdown += f"* Found {len(results)} results for query: '{query}'\n"
+            stats_markdown += f"* Total facts in vector store: {stats.get('fact_count', 0)}\n"
+            
+            # If no results, return early
+            if not results:
+                results_markdown = "No results found. Try a different search query or check if facts have been added to the vector store."
+                return results_markdown, stats_markdown
+            
+            # Format the search results
+            results_markdown = f"## 🔍 Search Results for '{query}'\n\n"
+            
+            for i, fact in enumerate(results, 1):
+                # Format the similarity score as a percentage
+                similarity = f"{fact.get('similarity', 0) * 100:.1f}%"
                 
-                for doc_name, doc_facts in grouped_facts.items():
-                    f.write(f"## {doc_name}\n\n")
-                    for i, fact in enumerate(doc_facts):
-                        f.write(f"### Fact {i+1}\n\n")
-                        f.write(f"**Statement:** {fact['statement']}\n\n")
-                        if fact.get("verification_reason"):
-                            f.write(f"**Reasoning:** {fact['verification_reason']}\n\n")
-                        f.write("---\n\n")
+                results_markdown += f"### Result {i} (Relevance: {similarity})\n\n"
+                results_markdown += f"**Statement:** {fact.get('statement', '')}\n\n"
+                results_markdown += f"**Source:** {fact.get('document_name', '')}, Chunk: {fact.get('chunk_index', 0)}\n\n"
+                
+                if fact.get('extracted_at'):
+                    results_markdown += f"**Extracted:** {fact.get('extracted_at', '')}\n\n"
+                
+                results_markdown += "---\n\n"
             
-            return f"Exported {len(facts)} facts to {output_path}"
+            self.debug_print(f"Found {len(results)} search results for query: '{query}'")
+            return results_markdown, stats_markdown
+            
         except Exception as e:
-            self.debug_print(f"Error exporting to Markdown: {str(e)}")
-            return f"Error exporting facts: {str(e)}"
+            error_message = f"Error searching facts: {str(e)}"
+            self.debug_print(error_message)
+            return f"Error: {error_message}", "Error occurred during search"
+    
+    def format_search_results(self, results: List[Dict[str, Any]]) -> str:
+        """
+        Format search results as Markdown.
+        
+        Args:
+            results: List of search result dictionaries
+            
+        Returns:
+            Markdown formatted results
+        """
+        if not results:
+            return "No results found."
+        
+        markdown = ""
+        
+        for i, result in enumerate(results, 1):
+            similarity = f"{result.get('similarity', 0) * 100:.1f}%"
+            statement = result.get('statement', 'No statement available')
+            document = result.get('document_name', 'Unknown document')
+            chunk_index = result.get('chunk_index', 0)
+            
+            markdown += f"### Result {i} (Relevance: {similarity})\n\n"
+            markdown += f"**Statement:** {statement}\n\n"
+            markdown += f"**Source:** {document}, Chunk: {chunk_index}\n\n"
+            markdown += "---\n\n"
+        
+        return markdown
 
     def build_interface(self) -> gr.Blocks:
         """Build the Gradio interface."""
@@ -1484,6 +1579,45 @@ class FactExtractionGUI:
                     # Status message
                     review_status = gr.Markdown("")
                     self.debug_print("Created review_status markdown")
+                
+                # Fact Search section
+                with gr.TabItem("Fact Search", elem_id="fact-search-tab"):
+                    self.debug_print("Building Fact Search tab")
+                    
+                    with gr.Row():
+                        # Left column for search input
+                        with gr.Column(scale=1):
+                            search_query = gr.Textbox(
+                                label="Search Query",
+                                placeholder="Enter a search query to find relevant facts",
+                                lines=2,
+                                interactive=True
+                            )
+                            self.debug_print("Created search_query textbox")
+                            
+                            num_results = gr.Slider(
+                                label="Number of Results",
+                                minimum=1,
+                                maximum=20,
+                                value=5,
+                                step=1,
+                                interactive=True
+                            )
+                            self.debug_print("Created num_results slider")
+                            
+                            search_btn = gr.Button("Search Facts", variant="primary")
+                            self.debug_print("Created search_btn button")
+                            
+                            search_stats = gr.Markdown("")
+                            self.debug_print("Created search_stats markdown")
+                        
+                        # Right column for search results
+                        with gr.Column(scale=2):
+                            search_results = gr.Markdown(
+                                value="Enter a search query and click Search to find relevant facts.",
+                                elem_id="search-results"
+                            )
+                            self.debug_print("Created search_results markdown")
             
             # Export Tab
             with gr.TabItem("Export", elem_id="export-tab"):
@@ -2023,9 +2157,34 @@ class FactExtractionGUI:
                 outputs=[export_status]
             )
             
+            # Search tab event handler
+            def on_search_facts(query, num_results):
+                """Handle searching for facts based on semantic search."""
+                self.debug_print(f"Search button clicked with query: '{query}', num_results: {num_results}")
+                
+                if not query:
+                    return "Please enter a search query", "No search performed"
+                
+                # Search for facts
+                results_markdown, stats_markdown = self.search_facts(
+                    query=query,
+                    n_results=int(num_results)
+                )
+                
+                return results_markdown, stats_markdown
+            
+            # Connect search button to the search handler
+            search_btn.click(
+                fn=on_search_facts,
+                inputs=[search_query, num_results],
+                outputs=[search_results, search_stats]
+            )
+            
+            self.debug_print("Connected all event handlers")
+            
         self.debug_print("Finished building interface")
         return interface
-
+    
     def refresh_facts_data(self):
         """Refresh the facts data from repositories."""
         self.debug_print("refresh_facts_data called")

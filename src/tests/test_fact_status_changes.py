@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
@@ -31,12 +31,12 @@ TEST_DOCUMENT_PATH = TEST_DATA_DIR / "test_document.txt"
 TEMP_TEST_DIR = Path("temp_test_data")
 
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState, create_initial_state
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState, create_initial_state
 
 @pytest.fixture
 def setup_test_environment():
@@ -133,9 +133,9 @@ async def test_reject_approved_fact(setup_test_environment, create_test_fact):
     assert approved_facts_before[0]['statement'] == test_fact['statement']
     
     # Mock the GUI to simulate fact rejection
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         # Initialize GUI
         gui = FactExtractionGUI()
@@ -197,9 +197,9 @@ async def test_approve_rejected_fact(setup_test_environment, create_rejected_tes
     assert rejected_facts_before[0]['statement'] == test_fact['statement']
     
     # Mock the GUI to simulate fact approval
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         # Initialize GUI
         gui = FactExtractionGUI()
@@ -254,9 +254,9 @@ async def test_modify_fact_verification_reason(setup_test_environment, create_te
     fact_repo.store_fact(test_fact)
     
     # Mock the GUI to simulate fact reason modification
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
     
         # Initialize GUI
         gui = FactExtractionGUI()

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fact_extract.utils.document_processors import DocumentProcessorFactory
+from src.fact_extract.utils.document_processors import DocumentProcessorFactory
 
 logger = logging.getLogger(__name__)
 

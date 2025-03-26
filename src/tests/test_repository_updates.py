@@ -15,17 +15,17 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState
 
 @pytest.fixture
 def setup_test_repositories():
@@ -150,9 +150,9 @@ def test_update_fact_reflected_in_excel(setup_test_repositories, create_sample_f
     chunk_repo, fact_repo, rejected_fact_repo, _, facts_file, _ = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         
@@ -202,9 +202,9 @@ def test_reject_fact_moves_to_rejected_excel(setup_test_repositories, create_sam
     chunk_repo, fact_repo, rejected_fact_repo, _, facts_file, rejected_facts_file = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         
@@ -266,9 +266,9 @@ def test_approve_rejected_fact_moves_to_facts_excel(setup_test_repositories, cre
     chunk_repo, fact_repo, rejected_fact_repo, _, facts_file, rejected_facts_file = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         
@@ -322,9 +322,9 @@ def test_batch_update_facts_reflected_in_excel(setup_test_repositories, create_s
     chunk_repo, fact_repo, rejected_fact_repo, _, facts_file, rejected_facts_file = setup_test_repositories
     
     # Create a GUI with patched repositories
-    with patch('src.fact_extract.gui.app.ChunkRepository', return_value=chunk_repo), \
-         patch('src.fact_extract.gui.app.FactRepository', return_value=fact_repo), \
-         patch('src.fact_extract.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
+    with patch('src.gui.app.ChunkRepository', return_value=chunk_repo), \
+         patch('src.gui.app.FactRepository', return_value=fact_repo), \
+         patch('src.gui.app.RejectedFactRepository', return_value=rejected_fact_repo):
         
         gui = FactExtractionGUI()
         

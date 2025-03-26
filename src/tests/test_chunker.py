@@ -4,28 +4,40 @@ Test script specifically for the chunker node to verify the fix for
 """
 
 import asyncio
-import sys
 import os
-import pytest
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
+import pytest  # Import pytest for the decorator
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
+
 # Load environment variables from .env file
 dotenv_path = Path(__file__).parents[2] / '.env'
 load_dotenv(dotenv_path)
 
-from utils.synthetic_data import SYNTHETIC_ARTICLE_2
-from models.state import create_initial_state
-from storage.chunk_repository import ChunkRepository
+# Fixed imports to use direct module paths
+from src.utils.synthetic_data import SYNTHETIC_ARTICLE_2
+from src.models.state import create_initial_state
+from src.storage.chunk_repository import ChunkRepository
+
+# Create a custom timeout decorator since with_timeout is missing
+def with_timeout(seconds):
+    """Decorator to add a timeout to a test function."""
+    def decorator(func):
+        @pytest.mark.timeout(seconds)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # Create a simplified version of the chunker node that doesn't depend on other modules
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # Add asyncio marker
+@pytest.mark.timeout(30)  # Use pytest.mark.timeout instead of with_timeout
 async def test_chunker_only():
     """Test only the chunking functionality without dependencies."""
     from langchain_text_splitters import RecursiveCharacterTextSplitter

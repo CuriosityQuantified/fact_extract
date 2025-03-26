@@ -8,17 +8,20 @@ import asyncio
 import pandas as pd
 from datetime import datetime
 import hashlib
+import pytest
+
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from models.state import create_initial_state
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository
+from src.models.state import create_initial_state
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository
 
+@pytest.mark.asyncio
 async def test_multiple_facts_per_chunk():
     """Test how the system handles chunks with multiple facts."""
     print("\n" + "="*80)
@@ -26,7 +29,7 @@ async def test_multiple_facts_per_chunk():
     print("="*80)
     
     # Create test data directory
-    os.makedirs("src/fact_extract/data", exist_ok=True)
+    os.makedirs("data", exist_ok=True)
     
     # Initialize repositories
     chunk_repo = ChunkRepository()

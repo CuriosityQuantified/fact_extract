@@ -46,17 +46,17 @@ def fix_imports_in_file(filepath):
     
     # Fix various import patterns
     
-    # 1. Fix "from fact_extract.XXX import XXX" -> "from XXX import XXX"
+    # 1. Fix "from src.fact_extract.XXX import XXX" -> "from XXX import XXX"
     content = re.sub(r"from fact_extract\.([^ ]+) import", r"from \1 import", content)
     
     # 2. Fix "from src.fact_extract.XXX import XXX" -> "from XXX import XXX"
     content = re.sub(r"from src\.fact_extract\.([^ ]+) import", r"from \1 import", content)
     
-    # 3. If we have bare imports like "from utils.XXX import XXX" without the path setup
+    # 3. If we have bare imports like "from src.utils.XXX import XXX" without the path setup
     if "from utils." in content and not src_path_found:
         content = re.sub(r"from utils\.", r"from utils.", content)
     
-    # 4. If we have bare imports like "from models.XXX import XXX" without the path setup
+    # 4. If we have bare imports like "from src.models.XXX import XXX" without the path setup
     if "from models." in content and not src_path_found:
         content = re.sub(r"from models\.", r"from models.", content)
     

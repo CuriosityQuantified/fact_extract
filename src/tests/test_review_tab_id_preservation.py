@@ -13,12 +13,12 @@ import pandas as pd
 from datetime import datetime
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Import required modules
-from storage.fact_repository import FactRepository, RejectedFactRepository
-from storage.chunk_repository import ChunkRepository
-from gui.app import FactExtractionGUI
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.gui.app import FactExtractionGUI
 
 @pytest.fixture
 def setup_test_environment():

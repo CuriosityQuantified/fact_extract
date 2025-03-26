@@ -6,7 +6,6 @@ import sys
 import logging
 import os
 import asyncio
-from dotenv import load_dotenv
 from pathlib import Path
 
 # Add the parent directory to the Python path
@@ -18,16 +17,12 @@ if parent_dir not in sys.path:
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Load environment variables from .env file
-dotenv_path = Path(__file__).parents[1] / '.env'
-load_dotenv(dotenv_path)
-
 # Import and explicitly initialize the LLM to ensure it's loaded into RAM 
 print("Initializing LLM model (loading into RAM)...")
 from src.llm_config import preload_model, default_llm
 print("LLM initialization complete.")
 
-from gui.app import create_app
+from src.gui.app import create_app
 
 def main():
     """Run the Fact Extraction GUI."""

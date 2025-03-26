@@ -15,20 +15,23 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState
 
 # Import workflow components for mocking
-from graph.nodes import chunker_node, extractor_node, validator_node
+from src.graph.nodes import chunker_node, extractor_node, validator_node
+
+from src import process_document
+from src import process_document as original_process_document
 
 class NetworkError(Exception):
     """Custom exception for simulating network errors."""
@@ -98,7 +101,7 @@ def test_text_file(tmp_path):
 @pytest.fixture
 def mock_network_error_extractor():
     """Create a mock extractor that simulates a network error."""
-    with patch('src.fact_extract.graph.nodes.extractor_node') as mock_extractor:
+    with patch('src.graph.nodes.extractor_node') as mock_extractor:
         
         # Configure the mock extractor to raise a network error on the first call
         calls = 0
@@ -138,7 +141,7 @@ def mock_network_error_extractor():
 @pytest.fixture
 def mock_network_error_validator():
     """Create a mock validator that simulates a network error."""
-    with patch('src.fact_extract.graph.nodes.validator_node') as mock_validator:
+    with patch('src.graph.nodes.validator_node') as mock_validator:
         
         # Configure the mock validator to raise a network error on the first call
         calls = 0
@@ -177,9 +180,9 @@ async def test_network_error_during_extraction(setup_test_repositories, test_tex
     chunk_repo, fact_repo, rejected_fact_repo = setup_test_repositories
     
     # Mock the chunker and validator to work normally
-    with patch('src.fact_extract.graph.nodes.chunker_node') as mock_chunker, \
-         patch('src.fact_extract.graph.nodes.validator_node') as mock_validator, \
-         patch('src.fact_extract.graph.nodes.create_workflow') as mock_create_workflow:
+    with patch('src.graph.nodes.chunker_node') as mock_chunker, \
+         patch('src.graph.nodes.validator_node') as mock_validator, \
+         patch('src.graph.nodes.create_workflow') as mock_create_workflow:
         
         # Configure the mock chunker
         async def mock_chunker_func(state):
@@ -242,9 +245,6 @@ async def test_network_error_during_extraction(setup_test_repositories, test_tex
         
         mock_create_workflow.return_value.run = run_workflow
         
-        # Import after mocking
-        from src.fact_extract import process_document
-        
         # Process the document
         result = await process_document(test_text_file)
         
@@ -268,9 +268,9 @@ async def test_network_error_during_validation(setup_test_repositories, test_tex
     chunk_repo, fact_repo, rejected_fact_repo = setup_test_repositories
     
     # Mock the chunker and extractor to work normally
-    with patch('src.fact_extract.graph.nodes.chunker_node') as mock_chunker, \
-         patch('src.fact_extract.graph.nodes.extractor_node') as mock_extractor, \
-         patch('src.fact_extract.graph.nodes.create_workflow') as mock_create_workflow:
+    with patch('src.graph.nodes.chunker_node') as mock_chunker, \
+         patch('src.graph.nodes.extractor_node') as mock_extractor, \
+         patch('src.graph.nodes.create_workflow') as mock_create_workflow:
         
         # Configure the mock chunker
         async def mock_chunker_func(state):
@@ -336,9 +336,6 @@ async def test_network_error_during_validation(setup_test_repositories, test_tex
         
         mock_create_workflow.return_value.run = run_workflow
         
-        # Import after mocking
-        from src.fact_extract import process_document
-        
         # Process the document
         result = await process_document(test_text_file)
         
@@ -370,9 +367,9 @@ async def test_gui_network_error_handling(setup_test_repositories, test_text_fil
     mock_file = MockFile(test_text_file)
     
     # Mock workflow components with network error
-    with patch('src.fact_extract.graph.nodes.chunker_node') as mock_chunker, \
-         patch('src.fact_extract.graph.nodes.validator_node') as mock_validator, \
-         patch('src.fact_extract.graph.nodes.create_workflow') as mock_create_workflow, \
+    with patch('src.graph.nodes.chunker_node') as mock_chunker, \
+         patch('src.graph.nodes.validator_node') as mock_validator, \
+         patch('src.graph.nodes.create_workflow') as mock_create_workflow, \
          patch('shutil.copy'):
         
         # Configure the mock chunker
@@ -406,8 +403,6 @@ async def test_gui_network_error_handling(setup_test_repositories, test_text_fil
         mock_validator.side_effect = mock_validator_func
         
         # Mock process_document function with network error
-        from src.fact_extract import process_document as original_process_document
-        
         async def mock_process_document(file_path, **kwargs):
             # Create error state first
             error_result = {
@@ -445,7 +440,7 @@ async def test_gui_network_error_handling(setup_test_repositories, test_text_fil
             return success_result
         
         # Process the file through GUI with the mock process_document
-        with patch('src.fact_extract.process_document', mock_process_document):
+        with patch('src.process_document', mock_process_document):
             # Process the file
             results = []
             async for result in gui.process_files([mock_file]):

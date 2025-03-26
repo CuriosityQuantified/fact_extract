@@ -16,18 +16,18 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 # Import repositories
-from storage.chunk_repository import ChunkRepository
-from storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
 
 # Import GUI components
-from gui.app import FactExtractionGUI
-from models.state import ProcessingState
-from utils.file_utils import is_valid_file, extract_text_from_file, ALLOWED_EXTENSIONS
+from src.gui.app import FactExtractionGUI
+from src.models.state import ProcessingState
+from src.utils.file_utils import is_valid_file, extract_text_from_file, ALLOWED_EXTENSIONS
 
 @pytest.fixture
 def temp_files():
@@ -150,7 +150,7 @@ async def test_gui_handling_of_mixed_files(temp_files):
     invalid_file = MockFile(temp_files['invalid']['html'])
     
     # Mock the process_document function to avoid actual processing
-    with patch('src.fact_extract.process_document') as mock_process:
+    with patch('src.process_document') as mock_process:
         mock_process.return_value = {
             "status": "completed",
             "message": "Processing completed successfully",
@@ -219,7 +219,7 @@ def test_very_large_file_validation():
             f.write(b'!')  # Write a single byte
         
         # Patch the max size check to use a very small limit for testing
-        with patch('src.fact_extract.utils.file_utils.get_max_size_for_extension', return_value=1):
+        with patch('src.utils.file_utils.get_max_size_for_extension', return_value=1):
             # Check that the file is considered invalid due to size
             assert not is_valid_file(large_file), "Very large file should be rejected"
 
@@ -288,7 +288,7 @@ async def test_corrupt_file_handling():
         mock_corrupt_file = MockFile(corrupt_pdf)
         
         # Mock the extract_text_from_file function to simulate an error during extraction
-        with patch('src.fact_extract.utils.file_utils.extract_text_from_file') as mock_extract:
+        with patch('src.utils.file_utils.extract_text_from_file') as mock_extract:
             mock_extract.side_effect = Exception("Failed to parse PDF: Invalid PDF structure")
             
             # Process the corrupt file
@@ -331,7 +331,7 @@ async def test_very_short_document():
         mock_short_file = MockFile(short_file)
         
         # Mock the process_document function to track what happens with a very short document
-        with patch('src.fact_extract.process_document') as mock_process:
+        with patch('src.process_document') as mock_process:
             mock_process.return_value = {
                 "status": "completed",
                 "message": "Processing completed successfully but no facts were found",

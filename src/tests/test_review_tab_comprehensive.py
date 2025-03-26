@@ -21,7 +21,7 @@ import logging
 
 
 # Ensure the src directory is in the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Ensure the src directory is in the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
@@ -35,10 +35,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Now import the application components
-from gui.app import FactExtractionGUI as BaseFactExtractionGUI
-from storage.fact_repository import FactRepository, RejectedFactRepository
-from storage.chunk_repository import ChunkRepository
-from models.state import ProcessingState, create_initial_state
+from src.gui.app import FactExtractionGUI as BaseFactExtractionGUI
+from src.storage.fact_repository import FactRepository, RejectedFactRepository
+from src.storage.chunk_repository import ChunkRepository
+from src.models.state import ProcessingState, create_initial_state
 
 # Create a custom subclass of FactExtractionGUI for testing
 class FactExtractionGUI(BaseFactExtractionGUI):
